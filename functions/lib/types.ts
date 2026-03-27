@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export type Role = "owner" | "ca";
 
-export type UploadType = "skydo_invoice" | "fira" | "expense" | "other";
+export type UploadType = "skydo_invoice" | "fira" | "expense" | "payment_proof" | "other";
 
 export interface JwtPayload {
   sub: string;
@@ -84,10 +84,22 @@ export const ExpenseResultSchema = z.object({
 
 export type ExpenseResult = z.infer<typeof ExpenseResultSchema>;
 
+export const PaymentProofResultSchema = z.object({
+  amount_inr: z.number(),
+  date: z.string(),
+  payment_method: z.enum(["upi", "card", "bank", "other"]).nullable(),
+  upi_transaction_id: z.string().nullable(),
+  confidence: z.enum(["high", "medium", "low"]),
+  review_reason: z.string().nullable(),
+});
+
+export type PaymentProofResult = z.infer<typeof PaymentProofResultSchema>;
+
 export type OcrResult =
   | { type: "skydo_invoice"; data: SkyDoResult }
   | { type: "fira"; data: FiraResult }
   | { type: "expense"; data: ExpenseResult }
+  | { type: "payment_proof"; data: PaymentProofResult }
   | { type: "other"; data: Record<string, unknown> };
 
 export type ErrorCode =

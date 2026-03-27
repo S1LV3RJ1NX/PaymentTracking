@@ -7,7 +7,17 @@ import type { Env, Role, UploadType } from "./types";
 import { LoginRequestSchema } from "./types";
 import { verifyJwt, verifyPassword, signJwt } from "./auth";
 import { runUploadPipeline } from "./upload-pipeline";
-import { getRows, getRow, updateRow, updateCell, deleteRow } from "./sheets";
+import {
+  getRows,
+  getRow,
+  updateRow,
+  updateCell,
+  deleteRow,
+  appendRow,
+  getPaymentsForExpense,
+  recalcPaymentStatus,
+} from "./sheets";
+import { extractDocument } from "./ocr";
 import { deleteFromR2, getFromR2, uploadRawToR2 } from "./storage";
 import { getCurrentFY, getFYDateRange, getFYFromDate } from "./fy";
 
@@ -89,7 +99,6 @@ app.post("/upload", ownerOnly, async (c) => {
   const rawFile = formData.get("file") as unknown;
   const uploadType = formData.get("type") as UploadType | null;
   const customDescription = formData.get("description") as string | null;
-  const rawPaymentFile = formData.get("paymentFile") as unknown;
   const rawBusinessPct = formData.get("businessPct") as string | null;
 
   if (!rawFile || typeof rawFile === "string") {
@@ -120,27 +129,6 @@ app.post("/upload", ownerOnly, async (c) => {
     );
   }
 
-  let paymentFileBuffer: ArrayBuffer | null = null;
-  let paymentMimeType: string | null = null;
-  let paymentFileName: string | null = null;
-
-  if (rawPaymentFile && typeof rawPaymentFile !== "string") {
-    const pf = rawPaymentFile as File;
-    if (!ALLOWED_MIME_TYPES.has(pf.type)) {
-      return c.json(
-        {
-          success: false,
-          error: "Unsupported payment file type. Accepted: PDF, JPEG, PNG, WebP",
-          code: "VALIDATION_ERROR",
-        },
-        400,
-      );
-    }
-    paymentFileBuffer = await pf.arrayBuffer();
-    paymentMimeType = pf.type;
-    paymentFileName = pf.name;
-  }
-
   const businessPct =
     rawBusinessPct !== null && rawBusinessPct !== "" ? parseInt(rawBusinessPct, 10) : null;
 
@@ -152,9 +140,6 @@ app.post("/upload", ownerOnly, async (c) => {
         fileName: file.name,
         uploadType,
         customDescription,
-        paymentFileBuffer,
-        paymentMimeType,
-        paymentFileName,
         businessPct: isNaN(businessPct ?? NaN) ? null : businessPct,
       },
       c.env,
@@ -269,7 +254,8 @@ const EXPENSE_COLS = [
   "file_key",
   "confidence",
   "added_at",
-  "payment_file_key",
+  "payment_status",
+  "total_paid",
 ];
 
 /**
@@ -432,20 +418,11 @@ app.post("/transactions/:id/fira", ownerOnly, async (c) => {
   }
 });
 
-app.post("/transactions/:id/payment", ownerOnly, async (c) => {
-  const id = c.req.param("id") ?? "";
-  const match = id.match(/^Expenses-(\d+)$/);
-  if (!match) {
-    return c.json(
-      {
-        success: false,
-        error: "Invalid id format. Must be Expenses-RowNum",
-        code: "VALIDATION_ERROR",
-      },
-      400,
-    );
+app.post("/expenses/:rowNum/bill", ownerOnly, async (c) => {
+  const rowNum = parseInt(c.req.param("rowNum") ?? "", 10);
+  if (isNaN(rowNum)) {
+    return c.json({ success: false, error: "Invalid row number", code: "VALIDATION_ERROR" }, 400);
   }
-  const rowNum = parseInt(match[1]!, 10);
 
   const formData = await c.req.formData();
   const rawFile = formData.get("file") as unknown;
@@ -461,36 +438,91 @@ app.post("/transactions/:id/payment", ownerOnly, async (c) => {
   }
 
   try {
-    const row = await getRow("Expenses", rowNum, c.env);
-    const date = normalizeDate(row[0] ?? new Date().toISOString().slice(0, 10));
+    const existingRow = await getRow("Expenses", rowNum, c.env);
+    const date = normalizeDate(existingRow[0] ?? new Date().toISOString().slice(0, 10));
     const fy = getFYFromDate(date);
-    const paymentKey = `${fy}/Payments/${Date.now()}_${file.name}`;
+    const billKey = `${fy}/Expenses/${Date.now()}_${file.name}`;
 
-    await uploadRawToR2(paymentKey, await file.arrayBuffer(), file.type, c.env);
-    await updateCell("Expenses", rowNum, "L", paymentKey, c.env);
+    const fileBuffer = await file.arrayBuffer();
+    await uploadRawToR2(billKey, fileBuffer, file.type, c.env);
 
-    return c.json({ success: true, data: { id, paymentFileKey: paymentKey } });
+    let ocrData: Record<string, unknown> = {};
+    try {
+      const ocr = await extractDocument(fileBuffer, file.type, "expense", c.env.ANTHROPIC_API_KEY);
+      if (ocr.type === "expense") ocrData = ocr.data as unknown as Record<string, unknown>;
+    } catch (ocrErr) {
+      console.error("[expenses/bill] OCR failed (continuing):", ocrErr);
+    }
+
+    const oldFileKey = existingRow[8] ?? "";
+    const bpct = existingRow[4] ?? "100";
+    const newAmount = ocrData["amount_inr"] != null ? Number(ocrData["amount_inr"]) : null;
+    const updated = [...existingRow];
+
+    updated[8] = billKey;
+
+    if (newAmount != null && !isNaN(newAmount)) {
+      updated[3] = String(newAmount);
+      const pct = parseInt(bpct) || 100;
+      updated[5] = String(newAmount * (pct / 100));
+    }
+    if (ocrData["vendor"]) updated[7] = String(ocrData["vendor"]);
+    if (ocrData["category"]) updated[2] = String(ocrData["category"]);
+    if (ocrData["date"]) updated[0] = String(ocrData["date"]);
+    if (ocrData["description"]) updated[1] = String(ocrData["description"]);
+    if (ocrData["payment_method"]) updated[6] = String(ocrData["payment_method"]);
+    if (ocrData["confidence"]) updated[9] = String(ocrData["confidence"]);
+
+    await updateRow("Expenses", rowNum, updated, c.env);
+
+    if (oldFileKey && oldFileKey !== billKey) {
+      try {
+        await deleteFromR2(oldFileKey, c.env);
+      } catch {
+        /* continue */
+      }
+    }
+
+    const { status, totalPaid } = await recalcPaymentStatus(rowNum, c.env);
+
+    return c.json({
+      success: true,
+      data: {
+        fileKey: billKey,
+        amount_inr: updated[3],
+        ocrData,
+        status,
+        totalPaid,
+      },
+    });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Failed to attach payment";
-    console.error("[transactions/payment]", msg);
+    const msg = err instanceof Error ? err.message : "Failed to replace bill";
+    console.error("[expenses/bill]", msg);
     return c.json({ success: false, error: msg, code: "SHEET_ERROR" }, 500);
   }
 });
 
-app.post("/transactions/:id/bill", ownerOnly, async (c) => {
-  const id = c.req.param("id") ?? "";
-  const match = id.match(/^Expenses-(\d+)$/);
-  if (!match) {
-    return c.json(
-      {
-        success: false,
-        error: "Invalid id format. Must be Expenses-RowNum",
-        code: "VALIDATION_ERROR",
-      },
-      400,
-    );
+app.get("/expenses/:rowNum/payments", async (c) => {
+  const rowNum = parseInt(c.req.param("rowNum") ?? "", 10);
+  if (isNaN(rowNum)) {
+    return c.json({ success: false, error: "Invalid row number", code: "VALIDATION_ERROR" }, 400);
   }
-  const rowNum = parseInt(match[1]!, 10);
+
+  try {
+    const payments = await getPaymentsForExpense(rowNum, c.env);
+    return c.json({ success: true, data: { payments } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to fetch payments";
+    console.error("[expenses/payments]", msg);
+    return c.json({ success: false, error: msg, code: "SHEET_ERROR" }, 500);
+  }
+});
+
+app.post("/expenses/:rowNum/payments", ownerOnly, async (c) => {
+  const rowNum = parseInt(c.req.param("rowNum") ?? "", 10);
+  if (isNaN(rowNum)) {
+    return c.json({ success: false, error: "Invalid row number", code: "VALIDATION_ERROR" }, 400);
+  }
 
   const formData = await c.req.formData();
   const rawFile = formData.get("file") as unknown;
@@ -506,26 +538,78 @@ app.post("/transactions/:id/bill", ownerOnly, async (c) => {
   }
 
   try {
-    const row = await getRow("Expenses", rowNum, c.env);
-    const date = normalizeDate(row[0] ?? new Date().toISOString().slice(0, 10));
+    const expRow = await getRow("Expenses", rowNum, c.env);
+    const date = normalizeDate(expRow[0] ?? new Date().toISOString().slice(0, 10));
     const fy = getFYFromDate(date);
-    const billKey = `${fy}/Expenses/${Date.now()}_${file.name}`;
+    const paymentKey = `${fy}/Payments/${Date.now()}_${file.name}`;
 
-    await uploadRawToR2(billKey, await file.arrayBuffer(), file.type, c.env);
+    const fileBuffer = await file.arrayBuffer();
+    await uploadRawToR2(paymentKey, fileBuffer, file.type, c.env);
 
-    const oldFileKey = row[8] ?? "";
-    if (oldFileKey) {
-      await updateCell("Expenses", rowNum, "L", oldFileKey, c.env);
+    let ocrData: Record<string, unknown> = {};
+    try {
+      const ocr = await extractDocument(
+        fileBuffer,
+        file.type,
+        "payment_proof",
+        c.env.ANTHROPIC_API_KEY,
+      );
+      if (ocr.type === "payment_proof") ocrData = ocr.data as unknown as Record<string, unknown>;
+    } catch (ocrErr) {
+      console.error("[expenses/payments] OCR failed (continuing):", ocrErr);
     }
-    await updateCell("Expenses", rowNum, "I", billKey, c.env);
+
+    const now = new Date().toISOString();
+    const paymentRow = [
+      String(rowNum),
+      String(ocrData["date"] ?? date),
+      String(ocrData["amount_inr"] ?? ""),
+      String(ocrData["payment_method"] ?? ""),
+      String(ocrData["upi_transaction_id"] ?? ""),
+      paymentKey,
+      String(ocrData["confidence"] ?? "low"),
+      now,
+    ];
+    const paymentRowNum = await appendRow("Payments", paymentRow, c.env);
+
+    const { status, totalPaid } = await recalcPaymentStatus(rowNum, c.env);
 
     return c.json({
       success: true,
-      data: { id, fileKey: billKey, paymentFileKey: oldFileKey },
+      data: { paymentRowNum, paymentKey, ocrData, status, totalPaid },
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Failed to attach bill";
-    console.error("[transactions/bill]", msg);
+    const msg = err instanceof Error ? err.message : "Failed to add payment";
+    console.error("[expenses/payments]", msg);
+    return c.json({ success: false, error: msg, code: "SHEET_ERROR" }, 500);
+  }
+});
+
+app.delete("/expenses/:rowNum/payments/:paymentRow", ownerOnly, async (c) => {
+  const expRowNum = parseInt(c.req.param("rowNum") ?? "", 10);
+  const paymentRowNum = parseInt(c.req.param("paymentRow") ?? "", 10);
+  if (isNaN(expRowNum) || isNaN(paymentRowNum)) {
+    return c.json({ success: false, error: "Invalid row numbers", code: "VALIDATION_ERROR" }, 400);
+  }
+
+  try {
+    const payRow = await getRow("Payments", paymentRowNum, c.env);
+    const fileKey = payRow[5] ?? "";
+    if (fileKey) {
+      try {
+        await deleteFromR2(fileKey, c.env);
+      } catch (r2Err) {
+        console.error("[expenses/payments/delete] R2 cleanup failed:", r2Err);
+      }
+    }
+
+    await deleteRow("Payments", paymentRowNum, c.env);
+    const { status, totalPaid } = await recalcPaymentStatus(expRowNum, c.env);
+
+    return c.json({ success: true, data: { deleted: true, status, totalPaid } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to delete payment";
+    console.error("[expenses/payments/delete]", msg);
     return c.json({ success: false, error: msg, code: "SHEET_ERROR" }, 500);
   }
 });
@@ -627,7 +711,6 @@ app.delete("/transactions/:id", ownerOnly, async (c) => {
   try {
     const row = await getRow(tab, rowNum, c.env);
     const fileKey = row[8] ?? "";
-    const paymentKey = tab === "Expenses" ? (row[11] ?? "") : "";
 
     if (fileKey) {
       try {
@@ -637,11 +720,21 @@ app.delete("/transactions/:id", ownerOnly, async (c) => {
       }
     }
 
-    if (paymentKey) {
+    if (tab === "Expenses") {
       try {
-        await deleteFromR2(paymentKey, c.env);
-      } catch (r2Err) {
-        console.error("[transactions/delete] R2 payment cleanup failed (continuing):", r2Err);
+        const payments = await getPaymentsForExpense(rowNum, c.env);
+        for (const p of payments) {
+          if (p.file_key) {
+            try {
+              await deleteFromR2(p.file_key, c.env);
+            } catch {
+              /* continue */
+            }
+          }
+          await deleteRow("Payments", p.paymentRow, c.env);
+        }
+      } catch (payErr) {
+        console.error("[transactions/delete] Payment cleanup failed (continuing):", payErr);
       }
     }
 

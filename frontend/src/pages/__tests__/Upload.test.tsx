@@ -77,7 +77,6 @@ describe("Upload page", () => {
           category: "other",
         },
         fileKey: "FY25-26/Expenses/2026-03/other_20260326_test.jpg",
-        paymentFileKey: null,
         rowNum: 5,
       },
     });
@@ -126,7 +125,6 @@ describe("Upload page", () => {
         uploadType: "expense",
         extracted: { vendor: "Shop", amount_inr: 100 },
         fileKey: "FY25-26/Expenses/other.pdf",
-        paymentFileKey: null,
         rowNum: 3,
       },
     });
@@ -156,11 +154,5 @@ describe("Upload page", () => {
 
     expect(screen.getByText("Business")).toBeInTheDocument();
     expect(screen.getByText("Non-business")).toBeInTheDocument();
-  });
-
-  it("shows payment proof section for expense type", () => {
-    render(<Upload />);
-
-    expect(screen.getByText("Payment proof (optional)")).toBeInTheDocument();
   });
 });

@@ -10,7 +10,6 @@ export type UploadStatus = "idle" | "uploading" | "success" | "error";
 interface UploadState {
   status: UploadStatus;
   file: File | null;
-  paymentFile: File | null;
   uploadType: UploadType;
   description: string;
   businessPct: number;
@@ -22,7 +21,6 @@ interface UploadState {
 const INITIAL_STATE: UploadState = {
   status: "idle",
   file: null,
-  paymentFile: null,
   uploadType: "expense",
   description: "",
   businessPct: 100,
@@ -36,10 +34,6 @@ export function useUpload() {
 
   const setFile = useCallback((file: File | null) => {
     setState((s) => ({ ...s, file, status: "idle", result: null, error: null }));
-  }, []);
-
-  const setPaymentFile = useCallback((paymentFile: File | null) => {
-    setState((s) => ({ ...s, paymentFile }));
   }, []);
 
   const setUploadType = useCallback((uploadType: UploadType) => {
@@ -68,16 +62,11 @@ export function useUpload() {
 
     try {
       const compressed = await maybeCompressImage(state.file);
-      const compressedPayment = state.paymentFile
-        ? await maybeCompressImage(state.paymentFile)
-        : undefined;
-
       const isExpenseType = state.uploadType === "expense" || state.uploadType === "other";
       const res = await uploadFile(
         compressed,
         state.uploadType,
         state.description || undefined,
-        compressedPayment,
         isExpenseType ? state.businessPct : undefined,
       );
       clearInterval(progressInterval);
@@ -104,7 +93,7 @@ export function useUpload() {
       }
       setState((s) => ({ ...s, status: "error", error: message, progress: 0 }));
     }
-  }, [state.file, state.paymentFile, state.uploadType, state.description, state.businessPct]);
+  }, [state.file, state.uploadType, state.description, state.businessPct]);
 
   const reset = useCallback(() => {
     setState(INITIAL_STATE);
@@ -113,7 +102,6 @@ export function useUpload() {
   return {
     ...state,
     setFile,
-    setPaymentFile,
     setUploadType,
     setDescription,
     setBusinessPct,

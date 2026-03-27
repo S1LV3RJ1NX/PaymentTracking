@@ -143,6 +143,89 @@ export async function updateCell(
   }
 }
 
+const PAYMENT_COLS = [
+  "expense_row",
+  "date",
+  "amount_inr",
+  "payment_method",
+  "upi_txn_id",
+  "file_key",
+  "confidence",
+  "added_at",
+];
+
+export { PAYMENT_COLS };
+
+export interface PaymentEntry {
+  paymentRow: number;
+  expense_row: string;
+  date: string;
+  amount_inr: string;
+  payment_method: string;
+  upi_txn_id: string;
+  file_key: string;
+  confidence: string;
+  added_at: string;
+}
+
+export async function getPaymentsForExpense(
+  expenseRowNum: number,
+  env: Env,
+): Promise<PaymentEntry[]> {
+  const rows = await getRows("Payments", env);
+  const result: PaymentEntry[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row[0]) continue;
+    if (row[0] === String(expenseRowNum)) {
+      const entry: PaymentEntry = {
+        paymentRow: i + 1,
+        expense_row: row[0] ?? "",
+        date: row[1] ?? "",
+        amount_inr: row[2] ?? "",
+        payment_method: row[3] ?? "",
+        upi_txn_id: row[4] ?? "",
+        file_key: row[5] ?? "",
+        confidence: row[6] ?? "",
+        added_at: row[7] ?? "",
+      };
+      result.push(entry);
+    }
+  }
+  return result;
+}
+
+export async function recalcPaymentStatus(
+  expenseRowNum: number,
+  env: Env,
+): Promise<{ status: string; totalPaid: number }> {
+  const payments = await getPaymentsForExpense(expenseRowNum, env);
+  let totalPaid = 0;
+  for (const p of payments) {
+    const amt = parseFloat(p.amount_inr.replace(/,/g, ""));
+    if (!isNaN(amt)) totalPaid += amt;
+  }
+
+  const expRow = await getRow("Expenses", expenseRowNum, env);
+  const invoiceAmt = parseFloat((expRow[3] ?? "0").replace(/,/g, ""));
+
+  let status = "unpaid";
+  if (payments.length === 0) {
+    status = "unpaid";
+  } else if (Math.abs(totalPaid - invoiceAmt) < 1) {
+    status = "paid";
+  } else if (totalPaid < invoiceAmt) {
+    status = "partial";
+  } else {
+    status = "overpaid";
+  }
+
+  await updateCell("Expenses", expenseRowNum, "L", status, env);
+  await updateCell("Expenses", expenseRowNum, "M", String(Math.round(totalPaid * 100) / 100), env);
+
+  return { status, totalPaid };
+}
+
 export async function findRowByNetInr(
   tab: string,
   inrAmount: number,

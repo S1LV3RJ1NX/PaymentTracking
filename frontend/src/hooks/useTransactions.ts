@@ -4,9 +4,9 @@ import {
   updateTransaction,
   deleteTransaction,
   moveTransaction,
-  attachPayment,
-  attachBill,
   attachFira,
+  addExpensePayment,
+  replaceBill,
 } from "../api/transactions";
 import type { TransactionRow } from "../api/transactions";
 import { maybeCompressImage } from "../lib/compressImage";
@@ -72,16 +72,16 @@ export function useTransactions(fy: string) {
   );
 
   const addPayment = useCallback(
-    async (id: string, file: File) => {
-      await attachPayment(id, await maybeCompressImage(file));
+    async (rowNum: number, file: File) => {
+      await addExpensePayment(rowNum, await maybeCompressImage(file));
       await fetchData();
     },
     [fetchData],
   );
 
-  const addBill = useCallback(
-    async (id: string, file: File) => {
-      await attachBill(id, await maybeCompressImage(file));
+  const swapBill = useCallback(
+    async (rowNum: number, file: File) => {
+      await replaceBill(rowNum, await maybeCompressImage(file));
       await fetchData();
     },
     [fetchData],
@@ -112,7 +112,7 @@ export function useTransactions(fy: string) {
     remove,
     move,
     addPayment,
-    addBill,
+    swapBill,
     addFira,
     refetch: fetchData,
   };

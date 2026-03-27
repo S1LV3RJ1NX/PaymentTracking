@@ -63,7 +63,6 @@ export function Upload() {
   const {
     status,
     file,
-    paymentFile,
     uploadType,
     description,
     businessPct,
@@ -71,7 +70,6 @@ export function Upload() {
     error,
     progress,
     setFile,
-    setPaymentFile,
     setUploadType,
     setDescription,
     setBusinessPct,
@@ -103,7 +101,6 @@ export function Upload() {
 
   const isUploading = status === "uploading";
   const showDescription = uploadType === "expense" || uploadType === "other";
-  const showPaymentDrop = uploadType === "expense" || uploadType === "other";
   const showBusinessToggle = uploadType === "expense" || uploadType === "other";
 
   return (
@@ -192,18 +189,6 @@ export function Upload() {
                 placeholder="e.g. Internet bill March 2026"
                 disabled={isUploading}
                 className="border-thin border-border bg-surface-card text-text placeholder:text-text-tertiary focus:ring-accent-blue/30 w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2"
-              />
-            </div>
-          )}
-
-          {/* Payment proof drop zone */}
-          {showPaymentDrop && (
-            <div>
-              <p className="label-uppercase mb-2">Payment proof (optional)</p>
-              <DropZone
-                onFileSelected={setPaymentFile}
-                currentFile={paymentFile}
-                disabled={isUploading}
               />
             </div>
           )}

@@ -1,7 +1,6 @@
 import type { UploadType, Env, OcrResult } from "./types";
 import { extractDocument } from "./ocr";
-import { uploadToR2, uploadRawToR2 } from "./storage";
-import { getFYFromDate } from "./fy";
+import { uploadToR2 } from "./storage";
 import { appendRow, findRowByNetInr, updateFiraColumns } from "./sheets";
 
 export interface UploadInput {
@@ -10,9 +9,6 @@ export interface UploadInput {
   fileName: string;
   uploadType: UploadType;
   customDescription: string | null;
-  paymentFileBuffer: ArrayBuffer | null;
-  paymentMimeType: string | null;
-  paymentFileName: string | null;
   businessPct: number | null;
 }
 
@@ -21,7 +17,6 @@ export interface UploadOutput {
   uploadType: UploadType;
   extracted: Record<string, unknown>;
   fileKey: string;
-  paymentFileKey: string | null;
   [key: string]: unknown;
 }
 
@@ -46,14 +41,6 @@ export async function runUploadPipeline(input: UploadInput, env: Env): Promise<U
     env,
   );
 
-  let paymentFileKey: string | null = null;
-  if (input.paymentFileBuffer && input.paymentMimeType && input.paymentFileName) {
-    const date = getDateFromOcr(ocrResult);
-    const fy = getFYFromDate(date);
-    paymentFileKey = `${fy}/Payments/${Date.now()}_${input.paymentFileName}`;
-    await uploadRawToR2(paymentFileKey, input.paymentFileBuffer, input.paymentMimeType, env);
-  }
-
   const confidence = ocrResult.type !== "other" ? ocrResult.data.confidence : "low";
   const status = confidence === "high" ? "confirmed" : "review";
 
@@ -62,7 +49,6 @@ export async function runUploadPipeline(input: UploadInput, env: Env): Promise<U
     input.uploadType,
     ocrResult,
     fileKey,
-    paymentFileKey ?? "",
     input.businessPct,
     now,
     env,
@@ -73,31 +59,14 @@ export async function runUploadPipeline(input: UploadInput, env: Env): Promise<U
     uploadType: input.uploadType,
     extracted: ocrResult.data as Record<string, unknown>,
     fileKey,
-    paymentFileKey,
     ...sheetResult,
   };
-}
-
-function getDateFromOcr(result: OcrResult): string {
-  switch (result.type) {
-    case "skydo_invoice":
-      return result.data.date;
-    case "fira":
-      return result.data.processed_date;
-    case "expense":
-      return result.data.date;
-    case "other": {
-      const d = result.data["date"];
-      return typeof d === "string" ? d : new Date().toISOString().slice(0, 10);
-    }
-  }
 }
 
 async function writeToSheets(
   uploadType: UploadType,
   ocrResult: OcrResult,
   fileKey: string,
-  paymentFileKey: string,
   businessPctOverride: number | null,
   now: string,
   env: Env,
@@ -133,7 +102,8 @@ async function writeToSheets(
         fileKey,
         "high",
         now,
-        paymentFileKey,
+        "unpaid",
+        "0",
       ];
       const feeRowNum = await appendRow("Expenses", feeRow, env);
 
@@ -170,11 +140,15 @@ async function writeToSheets(
         fileKey,
         d.confidence,
         now,
-        paymentFileKey,
+        "unpaid",
+        "0",
       ];
       const rowNum = await appendRow("Expenses", row, env);
       return { rowNum };
     }
+
+    case "payment_proof":
+      throw new Error("payment_proof should not be used as a direct upload type");
 
     case "other": {
       const d = ocrResult.data as Record<string, unknown>;
@@ -193,7 +167,8 @@ async function writeToSheets(
         fileKey,
         "low",
         now,
-        paymentFileKey,
+        "unpaid",
+        "0",
       ];
       const rowNum = await appendRow("Expenses", row, env);
       return { rowNum };

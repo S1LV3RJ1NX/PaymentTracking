@@ -47,31 +47,65 @@ export async function moveTransaction(
   return res.data.data;
 }
 
-export async function attachPayment(id: string, file: File): Promise<{ paymentFileKey: string }> {
+export interface PaymentEntry {
+  paymentRow: number;
+  expense_row: string;
+  date: string;
+  amount_inr: string;
+  payment_method: string;
+  upi_txn_id: string;
+  file_key: string;
+  confidence: string;
+  added_at: string;
+}
+
+export async function getExpensePayments(expenseRowNum: number): Promise<PaymentEntry[]> {
+  const res = await api.get<{
+    success: true;
+    data: { payments: PaymentEntry[] };
+  }>(`/expenses/${expenseRowNum}/payments`);
+  return res.data.data.payments;
+}
+
+export async function addExpensePayment(
+  expenseRowNum: number,
+  file: File,
+): Promise<{ paymentRowNum: number; paymentKey: string; status: string; totalPaid: number }> {
   const form = new FormData();
   form.append("file", file);
   const res = await api.post<{
     success: true;
-    data: { id: string; paymentFileKey: string };
-  }>(`/transactions/${id}/payment`, form, {
+    data: { paymentRowNum: number; paymentKey: string; status: string; totalPaid: number };
+  }>(`/expenses/${expenseRowNum}/payments`, form, {
     headers: { "Content-Type": "multipart/form-data" },
-    timeout: 60_000,
+    timeout: 120_000,
   });
   return res.data.data;
 }
 
-export async function attachBill(
-  id: string,
+export async function deleteExpensePayment(
+  expenseRowNum: number,
+  paymentRowNum: number,
+): Promise<{ status: string; totalPaid: number }> {
+  const res = await api.delete<{
+    success: true;
+    data: { deleted: boolean; status: string; totalPaid: number };
+  }>(`/expenses/${expenseRowNum}/payments/${paymentRowNum}`);
+  return res.data.data;
+}
+
+export async function replaceBill(
+  expenseRowNum: number,
   file: File,
-): Promise<{ fileKey: string; paymentFileKey: string }> {
+): Promise<{ fileKey: string; amount_inr: string; status: string; totalPaid: number }> {
   const form = new FormData();
   form.append("file", file);
   const res = await api.post<{
     success: true;
-    data: { id: string; fileKey: string; paymentFileKey: string };
-  }>(`/transactions/${id}/bill`, form, {
+    data: { fileKey: string; amount_inr: string; status: string; totalPaid: number };
+  }>(`/expenses/${expenseRowNum}/bill`, form, {
     headers: { "Content-Type": "multipart/form-data" },
-    timeout: 60_000,
+    timeout: 120_000,
   });
   return res.data.data;
 }

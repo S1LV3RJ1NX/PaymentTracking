@@ -8,8 +8,33 @@ import { getStoredRole } from "../api/client";
 import { downloadFiles } from "../api/transactions";
 import { useFY } from "../context/FYContext";
 
+function PaymentStatusPill({ status }: { status: string }) {
+  const styles: Record<string, string> = {
+    paid: "bg-green-100 text-green-800",
+    partial: "bg-yellow-100 text-yellow-800",
+    overpaid: "bg-red-100 text-red-800",
+    unpaid: "bg-gray-100 text-gray-500",
+  };
+  if (!status || status === "unpaid")
+    return <span className="text-text-tertiary text-[11px]">—</span>;
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${styles[status] ?? styles.unpaid}`}
+    >
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </span>
+  );
+}
+
 const INCOME_FIELDS = ["date", "client", "invoice_number", "inr_amount", "confidence"];
-const EXPENSE_FIELDS = ["date", "description", "category", "amount_inr", "confidence"];
+const EXPENSE_FIELDS = [
+  "date",
+  "description",
+  "category",
+  "amount_inr",
+  "payment_status",
+  "confidence",
+];
 
 function formatMonth(month: string): string {
   const [y, m] = month.split("-");
@@ -65,21 +90,19 @@ function EditModal({ row, fields, onSave, onClose }: EditModalProps) {
       >
         <h3 className="label-uppercase mb-4">Edit Transaction</h3>
         <div className="max-h-[60vh] space-y-3 overflow-y-auto">
-          {fields
-            .filter((f) => f !== "confidence")
-            .map((field) => (
-              <div key={field}>
-                <label className="text-text-secondary mb-1 block text-[11px] font-medium uppercase tracking-wide">
-                  {field.replace(/_/g, " ")}
-                </label>
-                <input
-                  type="text"
-                  value={edited[field] ?? ""}
-                  onChange={(e) => setEdited((s) => ({ ...s, [field]: e.target.value }))}
-                  className="border-thin border-border bg-surface text-text focus:ring-accent-blue/30 w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
-                />
-              </div>
-            ))}
+          {fields.map((field) => (
+            <div key={field}>
+              <label className="text-text-secondary mb-1 block text-[11px] font-medium uppercase tracking-wide">
+                {field.replace(/_/g, " ")}
+              </label>
+              <input
+                type="text"
+                value={edited[field] ?? ""}
+                onChange={(e) => setEdited((s) => ({ ...s, [field]: e.target.value }))}
+                className="border-thin border-border bg-surface text-text focus:ring-accent-blue/30 w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+              />
+            </div>
+          ))}
         </div>
         <div className="mt-4 flex gap-2">
           <button
@@ -101,30 +124,29 @@ function EditModal({ row, fields, onSave, onClose }: EditModalProps) {
 }
 
 function AttachModal({
-  id,
   attachType,
   hasExistingFile,
   onAttach,
   onClose,
 }: {
-  id: string;
   attachType: "payment" | "bill" | "fira";
   hasExistingFile: boolean;
-  onAttach: (id: string, file: File, type: "payment" | "bill" | "fira") => void;
+  onAttach: (file: File, type: "payment" | "bill" | "fira") => void;
   onClose: () => void;
 }) {
   const [selectedType, setSelectedType] = useState(attachType);
-  const showTypeChoice = attachType === "payment" && hasExistingFile;
+  const showChoice = attachType === "payment" && hasExistingFile;
 
   const labels: Record<string, string> = {
-    payment: "Attach as Payment Proof",
-    bill: "Attach as Bill / Invoice",
+    payment: "Add Payment Proof",
+    bill: "Replace Bill / Invoice",
     fira: "Attach FIRA Certificate",
   };
 
   const descriptions: Record<string, string> = {
-    payment: "Current document stays as the bill. New file becomes the payment proof.",
-    bill: "New file becomes the bill. Current document moves to payment proof.",
+    payment: "Upload a payment screenshot or receipt. OCR will extract the amount automatically.",
+    bill: "Replace the main document with the actual bill/invoice. This re-runs OCR and updates the expense amount.",
+    fira: "Upload the FIRA certificate for this income transaction.",
   };
 
   return (
@@ -137,14 +159,12 @@ function AttachModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="label-uppercase mb-4">
-          {showTypeChoice ? "Attach Document" : labels[attachType]}
+          {showChoice ? "Attach Document" : labels[attachType]}
         </h3>
 
-        {showTypeChoice && (
+        {showChoice ? (
           <div className="mb-4 space-y-2">
-            <p className="text-text-secondary mb-3 text-[13px]">
-              This expense already has a document. What are you attaching?
-            </p>
+            <p className="text-text-secondary mb-3 text-[13px]">What are you attaching?</p>
             {(["payment", "bill"] as const).map((t) => (
               <label
                 key={t}
@@ -166,6 +186,8 @@ function AttachModal({
               </label>
             ))}
           </div>
+        ) : (
+          <p className="text-text-secondary mb-3 text-[13px]">{descriptions[attachType]}</p>
         )}
 
         <input
@@ -175,7 +197,7 @@ function AttachModal({
           onChange={(e) => {
             const f = e.target.files?.[0];
             if (f) {
-              onAttach(id, f, selectedType);
+              onAttach(f, selectedType);
               onClose();
             }
           }}
@@ -208,9 +230,10 @@ export function Transactions() {
     remove,
     move,
     addPayment,
-    addBill,
+    swapBill,
     addFira,
     rows,
+    refetch,
   } = useTransactions(fy);
   const role = getStoredRole();
   const isOwner = role === "owner";
@@ -219,10 +242,13 @@ export function Transactions() {
     values: Record<string, string>;
   } | null>(null);
   const [previewKey, setPreviewKey] = useState<string | null>(null);
-  const [previewPaymentKey, setPreviewPaymentKey] = useState<string | undefined>(undefined);
+  const [previewExpenseRowNum, setPreviewExpenseRowNum] = useState<number | undefined>(undefined);
+  const [previewInvoiceAmount, setPreviewInvoiceAmount] = useState<number | undefined>(undefined);
+  const [previewFiraKey, setPreviewFiraKey] = useState<string | undefined>(undefined);
   const [previewTabLabels, setPreviewTabLabels] = useState<[string, string] | undefined>(undefined);
   const [attachingId, setAttachingId] = useState<string | null>(null);
   const [attachingType, setAttachingType] = useState<"payment" | "bill" | "fira">("payment");
+  const [attachingRowNum, setAttachingRowNum] = useState<number>(0);
   const [attachingHasFile, setAttachingHasFile] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -275,7 +301,8 @@ export function Transactions() {
           "file_key",
           "confidence",
           "added_at",
-          "payment_file_key",
+          "payment_status",
+          "total_paid",
         ];
 
   const sortedMonths = Object.keys(months).sort().reverse();
@@ -447,6 +474,8 @@ export function Transactions() {
                         <td key={f} className="text-text px-4 py-2.5 last:text-right">
                           {f === "confidence" ? (
                             <ReviewBadge confidence={row.values[f] ?? "high"} />
+                          ) : f === "payment_status" ? (
+                            <PaymentStatusPill status={row.values[f] ?? ""} />
                           ) : f === "inr_amount" || f === "amount_inr" ? (
                             formatINR(row.values[f] ?? "0")
                           ) : (
@@ -463,14 +492,21 @@ export function Transactions() {
                                 onClick={() => {
                                   setPreviewKey(row.values.file_key!);
                                   if (tab === "Income") {
-                                    setPreviewPaymentKey(row.values.fira_drive_url || undefined);
+                                    setPreviewFiraKey(row.values.fira_drive_url || undefined);
                                     setPreviewTabLabels(
                                       row.values.fira_drive_url
                                         ? ["Skydo Invoice", "FIRA"]
                                         : undefined,
                                     );
+                                    setPreviewExpenseRowNum(undefined);
+                                    setPreviewInvoiceAmount(undefined);
                                   } else {
-                                    setPreviewPaymentKey(row.values.payment_file_key || undefined);
+                                    setPreviewExpenseRowNum(row.rowNum);
+                                    const amt = parseFloat(
+                                      (row.values.amount_inr ?? "0").replace(/,/g, ""),
+                                    );
+                                    setPreviewInvoiceAmount(isNaN(amt) ? 0 : amt);
+                                    setPreviewFiraKey(undefined);
                                     setPreviewTabLabels(undefined);
                                   }
                                 }}
@@ -521,43 +557,34 @@ export function Transactions() {
                             </Tooltip>
                           )}
 
-                          {tab === "Expenses" &&
-                            isOwner &&
-                            (!row.values.file_key || !row.values.payment_file_key) && (
-                              <Tooltip
-                                label={!row.values.file_key ? "Attach bill" : "Attach document"}
+                          {tab === "Expenses" && isOwner && (
+                            <Tooltip label="Attach document">
+                              <button
+                                aria-label="Attach document"
+                                onClick={() => {
+                                  setAttachingId(row.id);
+                                  setAttachingRowNum(row.rowNum);
+                                  setAttachingType("payment");
+                                  setAttachingHasFile(!!row.values.file_key);
+                                }}
+                                className="text-text-secondary hover:bg-accent-blue/10 hover:text-accent-blue rounded-md p-1.5 transition-colors"
                               >
-                                <button
-                                  aria-label={
-                                    !row.values.file_key ? "Attach bill" : "Attach document"
-                                  }
-                                  onClick={() => {
-                                    setAttachingId(row.id);
-                                    setAttachingHasFile(!!row.values.file_key);
-                                    if (!row.values.file_key) {
-                                      setAttachingType("bill");
-                                    } else {
-                                      setAttachingType("payment");
-                                    }
-                                  }}
-                                  className="text-text-secondary hover:bg-accent-blue/10 hover:text-accent-blue rounded-md p-1.5 transition-colors"
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width="15"
+                                  height="15"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
                                 >
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    width="15"
-                                    height="15"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    strokeWidth="2"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  >
-                                    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                                  </svg>
-                                </button>
-                              </Tooltip>
-                            )}
+                                  <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                                </svg>
+                              </button>
+                            </Tooltip>
+                          )}
 
                           {tab === "Expenses" && (
                             <Tooltip
@@ -691,11 +718,16 @@ export function Transactions() {
       {previewKey && (
         <FilePreview
           fileKey={previewKey}
-          paymentFileKey={previewPaymentKey}
           tabLabels={previewTabLabels}
+          firaFileKey={previewFiraKey}
+          expenseRowNum={previewExpenseRowNum}
+          invoiceAmount={previewInvoiceAmount}
+          onPaymentsChanged={() => void refetch()}
           onClose={() => {
             setPreviewKey(null);
-            setPreviewPaymentKey(undefined);
+            setPreviewExpenseRowNum(undefined);
+            setPreviewInvoiceAmount(undefined);
+            setPreviewFiraKey(undefined);
             setPreviewTabLabels(undefined);
           }}
         />
@@ -703,13 +735,12 @@ export function Transactions() {
 
       {attachingId && (
         <AttachModal
-          id={attachingId}
           attachType={attachingType}
           hasExistingFile={attachingHasFile}
-          onAttach={(id, file, type) => {
-            if (type === "fira") void addFira(id, file);
-            else if (type === "bill") void addBill(id, file);
-            else void addPayment(id, file);
+          onAttach={(file, type) => {
+            if (type === "fira") void addFira(attachingId, file);
+            else if (type === "bill") void swapBill(attachingRowNum, file);
+            else void addPayment(attachingRowNum, file);
           }}
           onClose={() => setAttachingId(null)}
         />

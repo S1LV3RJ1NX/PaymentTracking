@@ -15,7 +15,6 @@ interface JsonBody {
     uploadType?: string;
     extracted?: Record<string, unknown>;
     fileKey?: string;
-    paymentFileKey?: string | null;
   };
 }
 
@@ -157,9 +156,6 @@ describe("runUploadPipeline", () => {
         fileName: "receipt.pdf",
         uploadType: "expense",
         customDescription: null,
-        paymentFileBuffer: null,
-        paymentMimeType: null,
-        paymentFileName: null,
         businessPct: null,
       },
       mockEnv,
@@ -168,7 +164,6 @@ describe("runUploadPipeline", () => {
     expect(result.status).toBe("confirmed");
     expect(result.uploadType).toBe("expense");
     expect(result.fileKey).toBe("FY25-26/Invoices-Received/test.pdf");
-    expect(result.paymentFileKey).toBeNull();
     expect(result.extracted).toMatchObject({
       vendor: "Test Vendor",
       amount_inr: 2000,
@@ -201,9 +196,6 @@ describe("runUploadPipeline", () => {
         fileName: "bill.jpg",
         uploadType: "expense",
         customDescription: "Internet bill March 2026",
-        paymentFileBuffer: null,
-        paymentMimeType: null,
-        paymentFileName: null,
         businessPct: null,
       },
       mockEnv,
@@ -242,9 +234,6 @@ describe("runUploadPipeline", () => {
         fileName: "skydo.pdf",
         uploadType: "skydo_invoice",
         customDescription: null,
-        paymentFileBuffer: null,
-        paymentMimeType: null,
-        paymentFileName: null,
         businessPct: null,
       },
       mockEnv,
@@ -295,9 +284,6 @@ describe("runUploadPipeline", () => {
         fileName: "fira.pdf",
         uploadType: "fira",
         customDescription: null,
-        paymentFileBuffer: null,
-        paymentMimeType: null,
-        paymentFileName: null,
         businessPct: null,
       },
       mockEnv,
@@ -341,9 +327,6 @@ describe("runUploadPipeline", () => {
         fileName: "fira2.pdf",
         uploadType: "fira",
         customDescription: null,
-        paymentFileBuffer: null,
-        paymentMimeType: null,
-        paymentFileName: null,
         businessPct: null,
       },
       mockEnv,
@@ -379,9 +362,6 @@ describe("runUploadPipeline", () => {
         fileName: "unknown.png",
         uploadType: "expense",
         customDescription: null,
-        paymentFileBuffer: null,
-        paymentMimeType: null,
-        paymentFileName: null,
         businessPct: null,
       },
       mockEnv,
@@ -417,9 +397,6 @@ describe("runUploadPipeline", () => {
         fileName: "personal.jpg",
         uploadType: "expense",
         customDescription: null,
-        paymentFileBuffer: null,
-        paymentMimeType: null,
-        paymentFileName: null,
         businessPct: 0,
       },
       mockEnv,

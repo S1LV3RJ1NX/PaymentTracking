@@ -1,6 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { UploadType } from "./types";
-import { SkyDoResultSchema, FiraResultSchema, ExpenseResultSchema } from "./types";
+import {
+  SkyDoResultSchema,
+  FiraResultSchema,
+  ExpenseResultSchema,
+  PaymentProofResultSchema,
+} from "./types";
 
 const SKYDO_PROMPT = `You are a financial document parser. This is a Skydo invoice for an Indian freelancer.
 Extract ALL fields. Return ONLY valid JSON, no markdown, no explanation.
@@ -66,6 +71,23 @@ Rules:
 - If date is missing or unclear, set confidence to "low"
 - Dates in DD/MM/YYYY or DD-MM-YYYY format should be converted to YYYY-MM-DD`;
 
+const PAYMENT_PROOF_PROMPT = `You are a financial document parser. This is a payment proof — a UPI screenshot, bank transfer confirmation, or card payment receipt.
+Extract ONLY payment details. Return ONLY valid JSON, no markdown, no explanation.
+
+{
+  "amount_inr": number — amount paid in INR,
+  "date": "YYYY-MM-DD",
+  "payment_method": "upi" | "card" | "bank" | "other" | null,
+  "upi_transaction_id": "string or null — UPI txn ID / reference number if visible",
+  "confidence": "high" | "medium" | "low",
+  "review_reason": null or "string"
+}
+
+Rules:
+- Focus on extracting the payment amount and transaction reference
+- Dates in DD/MM/YYYY or DD-MM-YYYY format should be converted to YYYY-MM-DD
+- If amount or date is missing, set confidence to "low"`;
+
 const OTHER_PROMPT = `You are a financial document parser. Extract whatever financial information you can find.
 Return ONLY valid JSON, no markdown, no explanation.
 
@@ -88,6 +110,8 @@ function getPrompt(uploadType: UploadType): string {
       return FIRA_PROMPT;
     case "expense":
       return EXPENSE_PROMPT;
+    case "payment_proof":
+      return PAYMENT_PROOF_PROMPT;
     case "other":
       return OTHER_PROMPT;
   }
@@ -172,6 +196,13 @@ function validateOcrResult(raw: Record<string, unknown>, uploadType: UploadType)
         throw new Error(`Expense OCR validation failed: ${parsed.error.message}`);
       }
       return { type: "expense" as const, data: parsed.data };
+    }
+    case "payment_proof": {
+      const parsed = PaymentProofResultSchema.safeParse(raw);
+      if (!parsed.success) {
+        throw new Error(`Payment proof OCR validation failed: ${parsed.error.message}`);
+      }
+      return { type: "payment_proof" as const, data: parsed.data };
     }
     case "other":
       return { type: "other" as const, data: raw };

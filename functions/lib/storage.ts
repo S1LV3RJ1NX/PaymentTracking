@@ -9,6 +9,8 @@ function getDateFromResult(result: OcrResult): string {
       return result.data.processed_date;
     case "expense":
       return result.data.date;
+    case "payment_proof":
+      return result.data.date;
     case "other": {
       const d = result.data["date"];
       return typeof d === "string" ? d : new Date().toISOString().slice(0, 10);
@@ -25,6 +27,8 @@ function getSubfolder(uploadType: UploadType, result: OcrResult): string {
       return "FIRA";
     case "expense":
       return `Expenses/${date.slice(0, 7)}`;
+    case "payment_proof":
+      return "Payments";
     case "other":
       return "Expenses/Unsorted";
   }
@@ -50,6 +54,8 @@ export function buildFilename(
       const d = result.data as { category: string };
       return `${d.category}_${date.replace(/-/g, "")}_${originalName}`;
     }
+    case "payment_proof":
+      return `payment_${date.replace(/-/g, "")}_${originalName}`;
     case "other":
       return `other_${date.replace(/-/g, "")}_${originalName}`;
   }

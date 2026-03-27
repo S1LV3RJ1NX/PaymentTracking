@@ -6,14 +6,14 @@ You want to upload a Skydo invoice from your phone, see it parsed automatically,
 
 ## What you'll set up
 
-| Service                | Why                                                  | Free?                      |
-| ---------------------- | ---------------------------------------------------- | -------------------------- |
-| Google Cloud project   | Sheets API access                                    | Yes (within quota)         |
-| Google Service Account | Server-to-server auth, no OAuth popups               | Yes                        |
-| Google Sheet           | Your live ledger with Income + Expenses tabs         | Yes                        |
-| Cloudflare R2          | S3-compatible file storage for uploaded documents    | Yes (10 GB free)           |
-| Anthropic API key      | Claude Haiku OCR for invoices/receipts               | Pay-per-use (~$0.001/page) |
-| Cloudflare KV          | Tax estimates + cache (local only needs `--kv` flag) | Yes                        |
+| Service                | Why                                                    | Free?                      |
+| ---------------------- | ------------------------------------------------------ | -------------------------- |
+| Google Cloud project   | Sheets API access                                      | Yes (within quota)         |
+| Google Service Account | Server-to-server auth, no OAuth popups                 | Yes                        |
+| Google Sheet           | Your live ledger with Income, Expenses & Payments tabs | Yes                        |
+| Cloudflare R2          | S3-compatible file storage for uploaded documents      | Yes (10 GB free)           |
+| Anthropic API key      | Claude Haiku OCR for invoices/receipts                 | Pay-per-use (~$0.001/page) |
+| Cloudflare KV          | Tax estimates + cache (local only needs `--kv` flag)   | Yes                        |
 
 ---
 
@@ -133,6 +133,7 @@ Add both to `.dev.vars`.
 1. Go to [sheets.google.com](https://sheets.google.com) → create a new blank spreadsheet
 2. Rename the first tab to **Income** (right-click tab → Rename)
 3. Add a second tab named **Expenses** (click the `+` button)
+4. Add a third tab named **Payments** (click the `+` button)
 
 ### Income tab — Row 1 (headers):
 
@@ -142,13 +143,21 @@ Add both to `.dev.vars`.
 
 ### Expenses tab — Row 1 (headers):
 
-| A    | B           | C        | D          | E            | F             | G        | H      | I        | J          | K        | L                |
-| ---- | ----------- | -------- | ---------- | ------------ | ------------- | -------- | ------ | -------- | ---------- | -------- | ---------------- |
-| date | description | category | amount_inr | business_pct | claimable_inr | paid_via | vendor | file_key | confidence | added_at | payment_file_key |
+| A    | B           | C        | D          | E            | F             | G        | H      | I        | J          | K        | L              | M          |
+| ---- | ----------- | -------- | ---------- | ------------ | ------------- | -------- | ------ | -------- | ---------- | -------- | -------------- | ---------- |
+| date | description | category | amount_inr | business_pct | claimable_inr | paid_via | vendor | file_key | confidence | added_at | payment_status | total_paid |
 
-4. **Share with the service account:** Click **Share** → paste the `GOOGLE_SERVICE_ACCOUNT_EMAIL` → set to **Editor** → uncheck "Notify people" → **Share**
+### Payments tab — Row 1 (headers):
 
-5. **Copy the Sheet ID** from the URL:
+| A           | B    | C          | D              | E          | F        | G          | H        |
+| ----------- | ---- | ---------- | -------------- | ---------- | -------- | ---------- | -------- |
+| expense_row | date | amount_inr | payment_method | upi_txn_id | file_key | confidence | added_at |
+
+Each row in Payments links back to an Expenses row number in column A. One expense can have multiple payment proofs. The app automatically recalculates `payment_status` (unpaid/partial/paid/overpaid) and `total_paid` on the Expenses tab whenever payments are added or removed.
+
+5. **Share with the service account:** Click **Share** → paste the `GOOGLE_SERVICE_ACCOUNT_EMAIL` → set to **Editor** → uncheck "Notify people" → **Share**
+
+6. **Copy the Sheet ID** from the URL:
 
 ```
 https://docs.google.com/spreadsheets/d/THIS_IS_YOUR_SHEET_ID/edit
@@ -232,7 +241,7 @@ When you edit frontend or backend files, wrangler detects the change and auto-re
 
 Everything you upload during testing goes into your Google Sheet and local R2 storage. To clean up:
 
-- **Sheet:** Delete the test rows from the Income and Expenses tabs
+- **Sheet:** Delete the test rows from the Income, Expenses, and Payments tabs
 - **R2 (local):** Delete the `.wrangler/state/` directory, or just delete individual files via the app's Delete button
 - **R2 (production):** Use the Cloudflare Dashboard → R2 → browse and delete objects
 
