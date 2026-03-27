@@ -34,10 +34,11 @@ describe("Upload page", () => {
     expect(screen.getByText("Other")).toBeInTheDocument();
   });
 
-  it("renders the drop zone with prompt text", () => {
+  it("renders drop zones with prompt text", () => {
     render(<Upload />);
 
-    expect(screen.getByText("Tap to select or drop file")).toBeInTheDocument();
+    const dropzones = screen.getAllByText("Tap to select or drop file");
+    expect(dropzones.length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows description field for expense type", () => {
@@ -76,6 +77,7 @@ describe("Upload page", () => {
           category: "other",
         },
         fileKey: "FY25-26/Expenses/2026-03/other_20260326_test.jpg",
+        paymentFileKey: null,
         rowNum: 5,
       },
     });
@@ -83,11 +85,9 @@ describe("Upload page", () => {
     const user = userEvent.setup();
     render(<Upload />);
 
-    // Select file via our mock dropzone
-    const dropzone = screen.getByText("Tap to select or drop file");
-    await user.click(dropzone);
+    const dropzones = screen.getAllByText("Tap to select or drop file");
+    await user.click(dropzones[0]!);
 
-    // Submit
     const submitBtn = screen.getByRole("button", { name: /upload & extract/i });
     await user.click(submitBtn);
 
@@ -106,8 +106,8 @@ describe("Upload page", () => {
     const user = userEvent.setup();
     render(<Upload />);
 
-    const dropzone = screen.getByText("Tap to select or drop file");
-    await user.click(dropzone);
+    const dropzones = screen.getAllByText("Tap to select or drop file");
+    await user.click(dropzones[0]!);
 
     const submitBtn = screen.getByRole("button", { name: /upload & extract/i });
     await user.click(submitBtn);
@@ -126,6 +126,7 @@ describe("Upload page", () => {
         uploadType: "expense",
         extracted: { vendor: "Shop", amount_inr: 100 },
         fileKey: "FY25-26/Expenses/other.pdf",
+        paymentFileKey: null,
         rowNum: 3,
       },
     });
@@ -133,8 +134,8 @@ describe("Upload page", () => {
     const user = userEvent.setup();
     render(<Upload />);
 
-    const dropzone = screen.getByText("Tap to select or drop file");
-    await user.click(dropzone);
+    const dropzones = screen.getAllByText("Tap to select or drop file");
+    await user.click(dropzones[0]!);
 
     const submitBtn = screen.getByRole("button", { name: /upload & extract/i });
     await user.click(submitBtn);
@@ -146,6 +147,20 @@ describe("Upload page", () => {
     const resetBtn = screen.getByRole("button", { name: /upload another/i });
     await user.click(resetBtn);
 
-    expect(screen.getByText("Tap to select or drop file")).toBeInTheDocument();
+    const newDropzones = screen.getAllByText("Tap to select or drop file");
+    expect(newDropzones.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("shows business/non-business toggle for expense type", () => {
+    render(<Upload />);
+
+    expect(screen.getByText("Business")).toBeInTheDocument();
+    expect(screen.getByText("Non-business")).toBeInTheDocument();
+  });
+
+  it("shows payment proof section for expense type", () => {
+    render(<Upload />);
+
+    expect(screen.getByText("Payment proof (optional)")).toBeInTheDocument();
   });
 });

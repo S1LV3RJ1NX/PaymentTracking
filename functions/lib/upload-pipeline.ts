@@ -1,6 +1,7 @@
 import type { UploadType, Env, OcrResult } from "./types";
 import { extractDocument } from "./ocr";
-import { uploadToR2 } from "./storage";
+import { uploadToR2, uploadRawToR2 } from "./storage";
+import { getFYFromDate } from "./fy";
 import { appendRow, findRowByNetInr, updateFiraColumns } from "./sheets";
 
 export interface UploadInput {
@@ -9,6 +10,10 @@ export interface UploadInput {
   fileName: string;
   uploadType: UploadType;
   customDescription: string | null;
+  paymentFileBuffer: ArrayBuffer | null;
+  paymentMimeType: string | null;
+  paymentFileName: string | null;
+  businessPct: number | null;
 }
 
 export interface UploadOutput {
@@ -16,6 +21,7 @@ export interface UploadOutput {
   uploadType: UploadType;
   extracted: Record<string, unknown>;
   fileKey: string;
+  paymentFileKey: string | null;
   [key: string]: unknown;
 }
 
@@ -40,25 +46,59 @@ export async function runUploadPipeline(input: UploadInput, env: Env): Promise<U
     env,
   );
 
+  let paymentFileKey: string | null = null;
+  if (input.paymentFileBuffer && input.paymentMimeType && input.paymentFileName) {
+    const date = getDateFromOcr(ocrResult);
+    const fy = getFYFromDate(date);
+    paymentFileKey = `${fy}/Payments/${Date.now()}_${input.paymentFileName}`;
+    await uploadRawToR2(paymentFileKey, input.paymentFileBuffer, input.paymentMimeType, env);
+  }
+
   const confidence = ocrResult.type !== "other" ? ocrResult.data.confidence : "low";
   const status = confidence === "high" ? "confirmed" : "review";
 
   const now = new Date().toISOString();
-  const sheetResult = await writeToSheets(input.uploadType, ocrResult, fileKey, now, env);
+  const sheetResult = await writeToSheets(
+    input.uploadType,
+    ocrResult,
+    fileKey,
+    paymentFileKey ?? "",
+    input.businessPct,
+    now,
+    env,
+  );
 
   return {
     status,
     uploadType: input.uploadType,
     extracted: ocrResult.data as Record<string, unknown>,
     fileKey,
+    paymentFileKey,
     ...sheetResult,
   };
+}
+
+function getDateFromOcr(result: OcrResult): string {
+  switch (result.type) {
+    case "skydo_invoice":
+      return result.data.date;
+    case "fira":
+      return result.data.processed_date;
+    case "expense":
+      return result.data.date;
+    case "other": {
+      const d = result.data["date"];
+      return typeof d === "string" ? d : new Date().toISOString().slice(0, 10);
+    }
+  }
 }
 
 async function writeToSheets(
   uploadType: UploadType,
   ocrResult: OcrResult,
   fileKey: string,
+  paymentFileKey: string,
+  businessPctOverride: number | null,
   now: string,
   env: Env,
 ): Promise<Record<string, unknown>> {
@@ -93,6 +133,7 @@ async function writeToSheets(
         fileKey,
         "high",
         now,
+        paymentFileKey,
       ];
       const feeRowNum = await appendRow("Expenses", feeRow, env);
 
@@ -115,19 +156,21 @@ async function writeToSheets(
     case "expense": {
       if (ocrResult.type !== "expense") throw new Error("Type mismatch");
       const d = ocrResult.data;
-      const claimable = d.amount_inr * (d.business_pct / 100);
+      const bpct = businessPctOverride ?? d.business_pct;
+      const claimable = d.amount_inr * (bpct / 100);
       const row = [
         d.date,
         d.description ?? "",
         d.category,
         String(d.amount_inr),
-        String(d.business_pct),
+        String(bpct),
         String(claimable),
         d.payment_method ?? "",
         d.vendor ?? "",
         fileKey,
         d.confidence,
         now,
+        paymentFileKey,
       ];
       const rowNum = await appendRow("Expenses", row, env);
       return { rowNum };
@@ -135,18 +178,22 @@ async function writeToSheets(
 
     case "other": {
       const d = ocrResult.data as Record<string, unknown>;
+      const bpct = businessPctOverride ?? 100;
+      const amount = String(d["amount"] ?? "");
+      const claimable = amount ? String(parseFloat(amount) * (bpct / 100)) : amount;
       const row = [
         String(d["date"] ?? ""),
         String(d["description"] ?? ""),
         "other",
-        String(d["amount"] ?? ""),
-        "100",
-        String(d["amount"] ?? ""),
+        amount,
+        String(bpct),
+        claimable,
         "",
         String(d["vendor_or_client"] ?? ""),
         fileKey,
         "low",
         now,
+        paymentFileKey,
       ];
       const rowNum = await appendRow("Expenses", row, env);
       return { rowNum };

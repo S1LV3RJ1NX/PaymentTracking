@@ -14,7 +14,9 @@ interface JsonBody {
 
 vi.mock("../lib/sheets", () => ({
   getRows: vi.fn(),
+  getRow: vi.fn(),
   updateRow: vi.fn(),
+  updateCell: vi.fn(),
   deleteRow: vi.fn(),
   appendRow: vi.fn(),
   findRowByNetInr: vi.fn(),
@@ -22,7 +24,12 @@ vi.mock("../lib/sheets", () => ({
 }));
 
 vi.mock("../lib/ocr", () => ({ extractDocument: vi.fn() }));
-vi.mock("../lib/storage", () => ({ uploadToR2: vi.fn() }));
+vi.mock("../lib/storage", () => ({
+  uploadToR2: vi.fn(),
+  uploadRawToR2: vi.fn(),
+  deleteFromR2: vi.fn(),
+  getFromR2: vi.fn(),
+}));
 
 const kvStore: Record<string, string> = {};
 

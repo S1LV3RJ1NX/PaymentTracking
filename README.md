@@ -7,10 +7,16 @@ PWA for freelance sole proprietors to track income, expenses, and tax obligation
 - **Upload & OCR** — Drag-and-drop invoices, FIRA certificates, and expense receipts. Claude extracts structured data automatically.
 - **Google Sheets ledger** — Income and Expenses tabs updated in real time. Share with your CA for instant visibility.
 - **Cloudflare R2 storage** — Uploaded files stored in R2 with inline preview (images & PDFs).
-- **Dashboard** — YTD income, expenses, monthly chart, and client/category breakdowns.
+- **Dashboard** — YTD income, business and non-business expenses, monthly chart, and client/category breakdowns.
 - **Tax calculator** — Section 44ADA presumptive taxation, New Regime slabs, Section 87A rebate, advance tax schedule.
 - **Financial Year selector** — Global FY filter in the navbar, applies across all pages.
 - **Role-based access** — Owner (full access) and CA (read-only, no upload/delete).
+- **Business / Non-business expenses** — Categorise expenses during upload or move them later. Non-business expenses are excluded from tax calculations.
+- **Payment proof linking** — Attach UPI/bank payment screenshots to expenses. View both document and proof side-by-side.
+- **Skydo + FIRA linking** — FIRA certificates auto-match to Income rows. View invoice and FIRA in dual tabs, or manually attach.
+- **Search & filter** — Search transactions by any field. Business/non-business sub-tabs for expenses.
+- **Bulk download** — Select multiple transactions and download their files as a ZIP.
+- **PWA Share Target** — Share screenshots directly to the app from your phone's share menu.
 - **Mobile-friendly** — Responsive layout with hamburger menu, optimised for on-the-go uploads.
 
 ## Tech Stack
@@ -22,7 +28,7 @@ PWA for freelance sole proprietors to track income, expenses, and tax obligation
 | Storage  | Cloudflare R2 (files), Google Sheets (ledger) |
 | OCR      | Anthropic Claude Haiku                        |
 | Auth     | JWT + bcrypt, role-based middleware           |
-| Testing  | Vitest (132 tests — 78 backend, 54 frontend)  |
+| Testing  | Vitest (144 tests — 84 backend, 60 frontend)  |
 | CI       | Husky + lint-staged (lint, typecheck, tests)  |
 
 ## Project Structure

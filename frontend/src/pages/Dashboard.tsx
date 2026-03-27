@@ -67,7 +67,7 @@ export function Dashboard() {
       ) : (
         <>
           {/* Metric cards */}
-          <div className="mb-5 grid grid-cols-3 gap-2.5 max-[500px]:grid-cols-2">
+          <div className="mb-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             <MetricCard
               label="YTD Income"
               value={formatINR(summary.income.ytd_inr)}
@@ -75,10 +75,15 @@ export function Dashboard() {
               valueColor="green"
             />
             <MetricCard
-              label="YTD Expenses"
+              label="Business Expenses"
               value={formatINR(summary.expenses.ytd_claimable)}
               subtitle={`${Object.keys(summary.expenses.by_category).length} categories`}
               valueColor="red"
+            />
+            <MetricCard
+              label="Non-business Expenses"
+              value={formatINR(summary.non_business_expenses)}
+              subtitle="Not tax-deductible"
             />
             <MetricCard
               label="Needs Review"

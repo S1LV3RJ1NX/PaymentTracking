@@ -41,9 +41,10 @@ export async function getRows(tab: string, env: Env): Promise<string[][]> {
   const token = await getAccessToken(env);
   const range = encodeURIComponent(`${tab}!A:Z`);
 
-  const res = await fetch(`${BASE}/${env.GOOGLE_SHEET_ID}/values/${range}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const res = await fetch(
+    `${BASE}/${env.GOOGLE_SHEET_ID}/values/${range}?valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
 
   if (!res.ok) {
     const text = await res.text();
@@ -85,9 +86,10 @@ export async function getRow(tab: string, rowNum: number, env: Env): Promise<str
   const token = await getAccessToken(env);
   const range = encodeURIComponent(`${tab}!A${rowNum}:Z${rowNum}`);
 
-  const res = await fetch(`${BASE}/${env.GOOGLE_SHEET_ID}/values/${range}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const res = await fetch(
+    `${BASE}/${env.GOOGLE_SHEET_ID}/values/${range}?valueRenderOption=FORMATTED_VALUE&dateTimeRenderOption=FORMATTED_STRING`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
 
   if (!res.ok) {
     const text = await res.text();
@@ -110,6 +112,34 @@ export async function deleteRow(tab: string, rowNum: number, env: Env): Promise<
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Sheets delete failed: ${res.status} ${text}`);
+  }
+}
+
+export async function updateCell(
+  tab: string,
+  rowNum: number,
+  col: string,
+  value: string,
+  env: Env,
+): Promise<void> {
+  const token = await getAccessToken(env);
+  const range = encodeURIComponent(`${tab}!${col}${rowNum}`);
+
+  const res = await fetch(
+    `${BASE}/${env.GOOGLE_SHEET_ID}/values/${range}?valueInputOption=USER_ENTERED`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ values: [[value]] }),
+    },
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Sheets updateCell failed: ${res.status} ${text}`);
   }
 }
 

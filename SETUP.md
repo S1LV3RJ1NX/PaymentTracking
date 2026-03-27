@@ -142,9 +142,9 @@ Add both to `.dev.vars`.
 
 ### Expenses tab — Row 1 (headers):
 
-| A    | B           | C        | D          | E            | F             | G        | H      | I        | J          | K        |
-| ---- | ----------- | -------- | ---------- | ------------ | ------------- | -------- | ------ | -------- | ---------- | -------- |
-| date | description | category | amount_inr | business_pct | claimable_inr | paid_via | vendor | file_key | confidence | added_at |
+| A    | B           | C        | D          | E            | F             | G        | H      | I        | J          | K        | L                |
+| ---- | ----------- | -------- | ---------- | ------------ | ------------- | -------- | ------ | -------- | ---------- | -------- | ---------------- |
+| date | description | category | amount_inr | business_pct | claimable_inr | paid_via | vendor | file_key | confidence | added_at | payment_file_key |
 
 4. **Share with the service account:** Click **Share** → paste the `GOOGLE_SERVICE_ACCOUNT_EMAIL` → set to **Editor** → uncheck "Notify people" → **Share**
 

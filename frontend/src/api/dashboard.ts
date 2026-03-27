@@ -4,6 +4,7 @@ export interface DashboardSummary {
   fy: string;
   income: { ytd_inr: number; by_client: Record<string, number> };
   expenses: { ytd_claimable: number; by_category: Record<string, number> };
+  non_business_expenses: number;
   review_count: number;
 }
 

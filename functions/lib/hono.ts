@@ -2,13 +2,14 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { Context, Next } from "hono";
 import { ZodError } from "zod";
+import { zipSync } from "fflate";
 import type { Env, Role, UploadType } from "./types";
 import { LoginRequestSchema } from "./types";
 import { verifyJwt, verifyPassword, signJwt } from "./auth";
 import { runUploadPipeline } from "./upload-pipeline";
-import { getRows, getRow, updateRow, deleteRow } from "./sheets";
-import { deleteFromR2, getFromR2 } from "./storage";
-import { getCurrentFY, getFYDateRange } from "./fy";
+import { getRows, getRow, updateRow, updateCell, deleteRow } from "./sheets";
+import { deleteFromR2, getFromR2, uploadRawToR2 } from "./storage";
+import { getCurrentFY, getFYDateRange, getFYFromDate } from "./fy";
 
 type HonoEnv = { Bindings: Env; Variables: { role: Role; username: string } };
 
@@ -88,6 +89,8 @@ app.post("/upload", ownerOnly, async (c) => {
   const rawFile = formData.get("file") as unknown;
   const uploadType = formData.get("type") as UploadType | null;
   const customDescription = formData.get("description") as string | null;
+  const rawPaymentFile = formData.get("paymentFile") as unknown;
+  const rawBusinessPct = formData.get("businessPct") as string | null;
 
   if (!rawFile || typeof rawFile === "string") {
     return c.json({ success: false, error: "No file provided", code: "VALIDATION_ERROR" }, 400);
@@ -117,6 +120,30 @@ app.post("/upload", ownerOnly, async (c) => {
     );
   }
 
+  let paymentFileBuffer: ArrayBuffer | null = null;
+  let paymentMimeType: string | null = null;
+  let paymentFileName: string | null = null;
+
+  if (rawPaymentFile && typeof rawPaymentFile !== "string") {
+    const pf = rawPaymentFile as File;
+    if (!ALLOWED_MIME_TYPES.has(pf.type)) {
+      return c.json(
+        {
+          success: false,
+          error: "Unsupported payment file type. Accepted: PDF, JPEG, PNG, WebP",
+          code: "VALIDATION_ERROR",
+        },
+        400,
+      );
+    }
+    paymentFileBuffer = await pf.arrayBuffer();
+    paymentMimeType = pf.type;
+    paymentFileName = pf.name;
+  }
+
+  const businessPct =
+    rawBusinessPct !== null && rawBusinessPct !== "" ? parseInt(rawBusinessPct, 10) : null;
+
   try {
     const result = await runUploadPipeline(
       {
@@ -125,6 +152,10 @@ app.post("/upload", ownerOnly, async (c) => {
         fileName: file.name,
         uploadType,
         customDescription,
+        paymentFileBuffer,
+        paymentMimeType,
+        paymentFileName,
+        businessPct: isNaN(businessPct ?? NaN) ? null : businessPct,
       },
       c.env,
     );
@@ -159,6 +190,46 @@ app.get("/files/*", async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to fetch file";
     console.error("[files]", msg);
+    return c.json({ success: false, error: msg, code: "STORAGE_ERROR" }, 500);
+  }
+});
+
+app.post("/files/download", async (c) => {
+  const body = (await c.req.json()) as { keys: string[] };
+  if (!body.keys || !Array.isArray(body.keys) || body.keys.length === 0) {
+    return c.json(
+      { success: false, error: "keys array is required", code: "VALIDATION_ERROR" },
+      400,
+    );
+  }
+
+  try {
+    const files: Record<string, Uint8Array> = {};
+    const usedNames = new Set<string>();
+
+    for (const key of body.keys) {
+      const obj = await getFromR2(key, c.env);
+      if (!obj) continue;
+      const buf = await obj.arrayBuffer();
+      let name = key.split("/").pop() ?? key;
+      while (usedNames.has(name)) {
+        name = `_${name}`;
+      }
+      usedNames.add(name);
+      files[name] = new Uint8Array(buf);
+    }
+
+    const zipped = zipSync(files);
+
+    return new Response(zipped, {
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": "attachment; filename=documents.zip",
+      },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to create ZIP";
+    console.error("[files/download]", msg);
     return c.json({ success: false, error: msg, code: "STORAGE_ERROR" }, 500);
   }
 });
@@ -198,13 +269,44 @@ const EXPENSE_COLS = [
   "file_key",
   "confidence",
   "added_at",
+  "payment_file_key",
 ];
+
+/**
+ * Google Sheets may return dates as serial numbers (e.g. "46097") when the
+ * column format is Automatic/Number, or in locale formats like "3/27/2026".
+ * Normalise to ISO YYYY-MM-DD for reliable string comparison.
+ */
+function normalizeDate(raw: string): string {
+  if (!raw) return raw;
+
+  // Already ISO formatted
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+
+  // Serial number (Excel/Sheets epoch = 1899-12-30)
+  const num = Number(raw);
+  if (!isNaN(num) && num > 40000 && num < 60000) {
+    const epoch = new Date(1899, 11, 30);
+    epoch.setDate(epoch.getDate() + num);
+    return epoch.toISOString().slice(0, 10);
+  }
+
+  // Locale formats like "3/27/2026" or "03/27/2026"
+  const slashMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, m, d, y] = slashMatch;
+    return `${y}-${m!.padStart(2, "0")}-${d!.padStart(2, "0")}`;
+  }
+
+  return raw;
+}
 
 function rowToObject(row: string[], cols: string[]): Record<string, string> {
   const obj: Record<string, string> = {};
   for (let i = 0; i < cols.length; i++) {
     obj[cols[i]!] = row[i] ?? "";
   }
+  if (obj.date) obj.date = normalizeDate(obj.date);
   return obj;
 }
 
@@ -212,6 +314,8 @@ app.get("/transactions", async (c) => {
   const tab = c.req.query("tab") ?? "Expenses";
   const fy = c.req.query("fy") ?? getCurrentFY();
   const statusFilter = c.req.query("status");
+  const businessFilter = c.req.query("business");
+  const searchQuery = c.req.query("q")?.toLowerCase();
 
   if (!VALID_TABS.has(tab)) {
     return c.json(
@@ -235,13 +339,26 @@ app.get("/transactions", async (c) => {
       const row = allRows[i];
       if (!row || !row[0]) continue;
 
-      const date = row[0];
+      const date = normalizeDate(row[0]);
+      row[0] = date;
       if (date < start || date > end) continue;
 
       const confidence = row[9] ?? "high";
       if (statusFilter === "review" && confidence === "high") continue;
 
+      if (tab === "Expenses" && businessFilter !== undefined) {
+        const bpct = row[4] ?? "100";
+        if (businessFilter === "true" && bpct === "0") continue;
+        if (businessFilter === "false" && bpct !== "0") continue;
+      }
+
       const obj = rowToObject(row, cols);
+
+      if (searchQuery) {
+        const matches = Object.values(obj).some((v) => v.toLowerCase().includes(searchQuery));
+        if (!matches) continue;
+      }
+
       transactions.push({
         id: `${tab}-${i + 1}`,
         rowNum: i + 1,
@@ -266,6 +383,187 @@ app.get("/transactions", async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to fetch transactions";
     console.error("[transactions]", msg);
+    return c.json({ success: false, error: msg, code: "SHEET_ERROR" }, 500);
+  }
+});
+
+app.post("/transactions/:id/fira", ownerOnly, async (c) => {
+  const id = c.req.param("id") ?? "";
+  const match = id.match(/^Income-(\d+)$/);
+  if (!match) {
+    return c.json(
+      {
+        success: false,
+        error: "Invalid id format. Must be Income-RowNum",
+        code: "VALIDATION_ERROR",
+      },
+      400,
+    );
+  }
+  const rowNum = parseInt(match[1]!, 10);
+
+  const formData = await c.req.formData();
+  const rawFile = formData.get("file") as unknown;
+  if (!rawFile || typeof rawFile === "string") {
+    return c.json({ success: false, error: "No file provided", code: "VALIDATION_ERROR" }, 400);
+  }
+  const file = rawFile as File;
+  if (!ALLOWED_MIME_TYPES.has(file.type)) {
+    return c.json(
+      { success: false, error: "Unsupported file type", code: "VALIDATION_ERROR" },
+      400,
+    );
+  }
+
+  try {
+    const row = await getRow("Income", rowNum, c.env);
+    const date = normalizeDate(row[0] ?? new Date().toISOString().slice(0, 10));
+    const fy = getFYFromDate(date);
+    const firaKey = `${fy}/FIRA/${Date.now()}_${file.name}`;
+
+    await uploadRawToR2(firaKey, await file.arrayBuffer(), file.type, c.env);
+    await updateCell("Income", rowNum, "G", firaKey, c.env);
+
+    return c.json({ success: true, data: { id, firaFileKey: firaKey } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to attach FIRA";
+    console.error("[transactions/fira]", msg);
+    return c.json({ success: false, error: msg, code: "SHEET_ERROR" }, 500);
+  }
+});
+
+app.post("/transactions/:id/payment", ownerOnly, async (c) => {
+  const id = c.req.param("id") ?? "";
+  const match = id.match(/^Expenses-(\d+)$/);
+  if (!match) {
+    return c.json(
+      {
+        success: false,
+        error: "Invalid id format. Must be Expenses-RowNum",
+        code: "VALIDATION_ERROR",
+      },
+      400,
+    );
+  }
+  const rowNum = parseInt(match[1]!, 10);
+
+  const formData = await c.req.formData();
+  const rawFile = formData.get("file") as unknown;
+  if (!rawFile || typeof rawFile === "string") {
+    return c.json({ success: false, error: "No file provided", code: "VALIDATION_ERROR" }, 400);
+  }
+  const file = rawFile as File;
+  if (!ALLOWED_MIME_TYPES.has(file.type)) {
+    return c.json(
+      { success: false, error: "Unsupported file type", code: "VALIDATION_ERROR" },
+      400,
+    );
+  }
+
+  try {
+    const row = await getRow("Expenses", rowNum, c.env);
+    const date = normalizeDate(row[0] ?? new Date().toISOString().slice(0, 10));
+    const fy = getFYFromDate(date);
+    const paymentKey = `${fy}/Payments/${Date.now()}_${file.name}`;
+
+    await uploadRawToR2(paymentKey, await file.arrayBuffer(), file.type, c.env);
+    await updateCell("Expenses", rowNum, "L", paymentKey, c.env);
+
+    return c.json({ success: true, data: { id, paymentFileKey: paymentKey } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to attach payment";
+    console.error("[transactions/payment]", msg);
+    return c.json({ success: false, error: msg, code: "SHEET_ERROR" }, 500);
+  }
+});
+
+app.post("/transactions/:id/bill", ownerOnly, async (c) => {
+  const id = c.req.param("id") ?? "";
+  const match = id.match(/^Expenses-(\d+)$/);
+  if (!match) {
+    return c.json(
+      {
+        success: false,
+        error: "Invalid id format. Must be Expenses-RowNum",
+        code: "VALIDATION_ERROR",
+      },
+      400,
+    );
+  }
+  const rowNum = parseInt(match[1]!, 10);
+
+  const formData = await c.req.formData();
+  const rawFile = formData.get("file") as unknown;
+  if (!rawFile || typeof rawFile === "string") {
+    return c.json({ success: false, error: "No file provided", code: "VALIDATION_ERROR" }, 400);
+  }
+  const file = rawFile as File;
+  if (!ALLOWED_MIME_TYPES.has(file.type)) {
+    return c.json(
+      { success: false, error: "Unsupported file type", code: "VALIDATION_ERROR" },
+      400,
+    );
+  }
+
+  try {
+    const row = await getRow("Expenses", rowNum, c.env);
+    const date = normalizeDate(row[0] ?? new Date().toISOString().slice(0, 10));
+    const fy = getFYFromDate(date);
+    const billKey = `${fy}/Expenses/${Date.now()}_${file.name}`;
+
+    await uploadRawToR2(billKey, await file.arrayBuffer(), file.type, c.env);
+
+    const oldFileKey = row[8] ?? "";
+    if (oldFileKey) {
+      await updateCell("Expenses", rowNum, "L", oldFileKey, c.env);
+    }
+    await updateCell("Expenses", rowNum, "I", billKey, c.env);
+
+    return c.json({
+      success: true,
+      data: { id, fileKey: billKey, paymentFileKey: oldFileKey },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to attach bill";
+    console.error("[transactions/bill]", msg);
+    return c.json({ success: false, error: msg, code: "SHEET_ERROR" }, 500);
+  }
+});
+
+app.patch("/transactions/:id/move", async (c) => {
+  const id = c.req.param("id") ?? "";
+  const match = id.match(/^Expenses-(\d+)$/);
+  if (!match) {
+    return c.json(
+      {
+        success: false,
+        error: "Invalid id format. Must be Expenses-RowNum",
+        code: "VALIDATION_ERROR",
+      },
+      400,
+    );
+  }
+  const rowNum = parseInt(match[1]!, 10);
+
+  try {
+    const row = await getRow("Expenses", rowNum, c.env);
+    const currentPct = row[4] ?? "100";
+    const newPct = currentPct === "0" ? "100" : "0";
+    const amount = parseFloat((row[3] ?? "0").replace(/,/g, ""));
+    const newClaimable = String(amount * (parseInt(newPct) / 100));
+
+    const updated = [...row];
+    updated[4] = newPct;
+    updated[5] = newClaimable;
+    await updateRow("Expenses", rowNum, updated, c.env);
+
+    return c.json({
+      success: true,
+      data: { id, business_pct: newPct, claimable_inr: newClaimable },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to move transaction";
+    console.error("[transactions/move]", msg);
     return c.json({ success: false, error: msg, code: "SHEET_ERROR" }, 500);
   }
 });
@@ -329,12 +627,21 @@ app.delete("/transactions/:id", ownerOnly, async (c) => {
   try {
     const row = await getRow(tab, rowNum, c.env);
     const fileKey = row[8] ?? "";
+    const paymentKey = tab === "Expenses" ? (row[11] ?? "") : "";
 
     if (fileKey) {
       try {
         await deleteFromR2(fileKey, c.env);
       } catch (r2Err) {
         console.error("[transactions/delete] R2 cleanup failed (continuing):", r2Err);
+      }
+    }
+
+    if (paymentKey) {
+      try {
+        await deleteFromR2(paymentKey, c.env);
+      } catch (r2Err) {
+        console.error("[transactions/delete] R2 payment cleanup failed (continuing):", r2Err);
       }
     }
 
@@ -364,7 +671,8 @@ app.get("/dashboard/summary", async (c) => {
     for (let i = 1; i < incomeRows.length; i++) {
       const row = incomeRows[i];
       if (!row || !row[0]) continue;
-      if (row[0] < start || row[0] > end) continue;
+      const d = normalizeDate(row[0]);
+      if (d < start || d > end) continue;
 
       const inr = parseFloat((row[4] ?? "0").replace(/,/g, ""));
       if (!isNaN(inr)) {
@@ -378,19 +686,28 @@ app.get("/dashboard/summary", async (c) => {
     }
 
     let ytdExpenses = 0;
+    let nonBusinessExpenses = 0;
     const byCategory: Record<string, number> = {};
     let expenseReviewCount = 0;
 
     for (let i = 1; i < expenseRows.length; i++) {
       const row = expenseRows[i];
       if (!row || !row[0]) continue;
-      if (row[0] < start || row[0] > end) continue;
+      const d2 = normalizeDate(row[0]);
+      if (d2 < start || d2 > end) continue;
 
+      const amountInr = parseFloat((row[3] ?? "0").replace(/,/g, ""));
+      const bpct = row[4] ?? "100";
       const claimable = parseFloat((row[5] ?? "0").replace(/,/g, ""));
-      if (!isNaN(claimable)) {
-        ytdExpenses += claimable;
-        const category = row[2] ?? "other";
-        byCategory[category] = (byCategory[category] ?? 0) + claimable;
+
+      if (bpct === "0") {
+        if (!isNaN(amountInr)) nonBusinessExpenses += amountInr;
+      } else {
+        if (!isNaN(claimable)) {
+          ytdExpenses += claimable;
+          const category = row[2] ?? "other";
+          byCategory[category] = (byCategory[category] ?? 0) + claimable;
+        }
       }
 
       const confidence = row[9] ?? "high";
@@ -403,6 +720,7 @@ app.get("/dashboard/summary", async (c) => {
         fy,
         income: { ytd_inr: ytdIncomeInr, by_client: byClient },
         expenses: { ytd_claimable: ytdExpenses, by_category: byCategory },
+        non_business_expenses: nonBusinessExpenses,
         review_count: incomeReviewCount + expenseReviewCount,
       },
     });
@@ -429,9 +747,10 @@ app.get("/dashboard/monthly", async (c) => {
     for (let i = 1; i < incomeRows.length; i++) {
       const row = incomeRows[i];
       if (!row || !row[0]) continue;
-      if (row[0] < start || row[0] > end) continue;
+      const iDate = normalizeDate(row[0]);
+      if (iDate < start || iDate > end) continue;
 
-      const month = row[0].slice(0, 7);
+      const month = iDate.slice(0, 7);
       const inr = parseFloat((row[4] ?? "0").replace(/,/g, ""));
       if (!isNaN(inr)) monthlyIncome[month] = (monthlyIncome[month] ?? 0) + inr;
     }
@@ -439,9 +758,10 @@ app.get("/dashboard/monthly", async (c) => {
     for (let i = 1; i < expenseRows.length; i++) {
       const row = expenseRows[i];
       if (!row || !row[0]) continue;
-      if (row[0] < start || row[0] > end) continue;
+      const eDate = normalizeDate(row[0]);
+      if (eDate < start || eDate > end) continue;
 
-      const month = row[0].slice(0, 7);
+      const month = eDate.slice(0, 7);
       const claimable = parseFloat((row[5] ?? "0").replace(/,/g, ""));
       if (!isNaN(claimable)) monthlyExpenses[month] = (monthlyExpenses[month] ?? 0) + claimable;
     }

@@ -9,6 +9,7 @@ interface JsonBody {
     fy?: string;
     income?: { ytd_inr: number; by_client: Record<string, number> };
     expenses?: { ytd_claimable: number; by_category: Record<string, number> };
+    non_business_expenses?: number;
     review_count?: number;
     months?: Array<{ month: string; income: number; expenses: number }>;
   };
@@ -17,6 +18,7 @@ interface JsonBody {
 vi.mock("../lib/sheets", () => ({
   getRows: vi.fn(),
   updateRow: vi.fn(),
+  updateCell: vi.fn(),
   deleteRow: vi.fn(),
   appendRow: vi.fn(),
   findRowByNetInr: vi.fn(),
@@ -24,7 +26,12 @@ vi.mock("../lib/sheets", () => ({
 }));
 
 vi.mock("../lib/ocr", () => ({ extractDocument: vi.fn() }));
-vi.mock("../lib/storage", () => ({ uploadToR2: vi.fn() }));
+vi.mock("../lib/storage", () => ({
+  uploadToR2: vi.fn(),
+  uploadRawToR2: vi.fn(),
+  deleteFromR2: vi.fn(),
+  getFromR2: vi.fn(),
+}));
 
 const TEST_ENV = {
   JWT_SECRET: "test-secret-that-is-at-least-32-characters-long",
@@ -94,10 +101,11 @@ const EXPENSE_HEADER = [
   "url",
   "confidence",
   "ts",
+  "payment_file_key",
 ];
 
 describe("GET /api/dashboard/summary", () => {
-  it("computes YTD income and expenses", async () => {
+  it("computes YTD income, expenses and non-business", async () => {
     const { getRows } = await import("../lib/sheets");
     vi.mocked(getRows)
       .mockResolvedValueOnce([
@@ -131,6 +139,7 @@ describe("GET /api/dashboard/summary", () => {
           "url",
           "high",
           "ts",
+          "",
         ],
         [
           "2026-03-01",
@@ -144,6 +153,21 @@ describe("GET /api/dashboard/summary", () => {
           "url",
           "low",
           "ts",
+          "",
+        ],
+        [
+          "2026-02-15",
+          "Groceries",
+          "personal",
+          "3000",
+          "0",
+          "0",
+          "upi",
+          "Store",
+          "url",
+          "high",
+          "ts",
+          "",
         ],
       ]);
 
@@ -156,6 +180,7 @@ describe("GET /api/dashboard/summary", () => {
     expect(body.data!.income!.by_client["Client B"]).toBe(253000);
     expect(body.data!.expenses!.ytd_claimable).toBe(7000);
     expect(body.data!.expenses!.by_category["internet"]).toBe(2000);
+    expect(body.data!.non_business_expenses).toBe(3000);
     expect(body.data!.review_count).toBe(2);
   });
 
@@ -199,8 +224,22 @@ describe("GET /api/dashboard/monthly", () => {
           "url",
           "high",
           "ts",
+          "",
         ],
-        ["2026-02-20", "Rent", "rent", "15000", "100", "15000", "bank", "L", "url", "high", "ts"],
+        [
+          "2026-02-20",
+          "Rent",
+          "rent",
+          "15000",
+          "100",
+          "15000",
+          "bank",
+          "L",
+          "url",
+          "high",
+          "ts",
+          "",
+        ],
       ]);
 
     const res = await authGet("/api/dashboard/monthly?fy=FY25-26");

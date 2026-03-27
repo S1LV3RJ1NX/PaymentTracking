@@ -1,9 +1,19 @@
 import { useState, useEffect, useCallback } from "react";
-import { getTransactions, updateTransaction, deleteTransaction } from "../api/transactions";
+import {
+  getTransactions,
+  updateTransaction,
+  deleteTransaction,
+  moveTransaction,
+  attachPayment,
+  attachBill,
+  attachFira,
+} from "../api/transactions";
 import type { TransactionRow } from "../api/transactions";
 
 export function useTransactions(fy: string) {
   const [tab, setTab] = useState<"Income" | "Expenses">("Expenses");
+  const [businessFilter, setBusinessFilter] = useState<string | undefined>("true");
+  const [search, setSearch] = useState("");
   const [rows, setRows] = useState<TransactionRow[]>([]);
   const [months, setMonths] = useState<Record<string, TransactionRow[]>>({});
   const [total, setTotal] = useState(0);
@@ -14,7 +24,12 @@ export function useTransactions(fy: string) {
     setLoading(true);
     setError(null);
     try {
-      const data = await getTransactions(tab, fy);
+      const opts: { business?: string; q?: string } = {};
+      if (tab === "Expenses" && businessFilter !== undefined) {
+        opts.business = businessFilter;
+      }
+      if (search.trim()) opts.q = search.trim();
+      const data = await getTransactions(tab, fy, opts);
       setRows(data.rows);
       setMonths(data.months);
       setTotal(data.total);
@@ -25,7 +40,7 @@ export function useTransactions(fy: string) {
     } finally {
       setLoading(false);
     }
-  }, [tab, fy]);
+  }, [tab, fy, businessFilter, search]);
 
   useEffect(() => {
     void fetchData();
@@ -47,9 +62,45 @@ export function useTransactions(fy: string) {
     [fetchData],
   );
 
+  const move = useCallback(
+    async (id: string) => {
+      await moveTransaction(id);
+      await fetchData();
+    },
+    [fetchData],
+  );
+
+  const addPayment = useCallback(
+    async (id: string, file: File) => {
+      await attachPayment(id, file);
+      await fetchData();
+    },
+    [fetchData],
+  );
+
+  const addBill = useCallback(
+    async (id: string, file: File) => {
+      await attachBill(id, file);
+      await fetchData();
+    },
+    [fetchData],
+  );
+
+  const addFira = useCallback(
+    async (id: string, file: File) => {
+      await attachFira(id, file);
+      await fetchData();
+    },
+    [fetchData],
+  );
+
   return {
     tab,
     setTab,
+    businessFilter,
+    setBusinessFilter,
+    search,
+    setSearch,
     fy,
     rows,
     months,
@@ -58,6 +109,10 @@ export function useTransactions(fy: string) {
     error,
     update,
     remove,
+    move,
+    addPayment,
+    addBill,
+    addFira,
     refetch: fetchData,
   };
 }

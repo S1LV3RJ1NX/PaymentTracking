@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { DropZone } from "../components/DropZone";
 import { useUpload } from "../hooks/useUpload";
 import type { UploadType } from "../api/types";
@@ -62,20 +63,48 @@ export function Upload() {
   const {
     status,
     file,
+    paymentFile,
     uploadType,
     description,
+    businessPct,
     result,
     error,
     progress,
     setFile,
+    setPaymentFile,
     setUploadType,
     setDescription,
+    setBusinessPct,
     submit,
     reset,
   } = useUpload();
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("shared") === "1") {
+      (async () => {
+        try {
+          const cache = await caches.open("share-target");
+          const res = await cache.match("shared-file");
+          if (res) {
+            const blob = await res.blob();
+            const name = res.headers.get("X-Filename") ?? "shared-file";
+            const f = new File([blob], name, { type: blob.type });
+            setFile(f);
+            await cache.delete("shared-file");
+          }
+        } catch {
+          /* cache API may not be available */
+        }
+        window.history.replaceState({}, "", "/upload");
+      })();
+    }
+  }, [setFile]);
+
   const isUploading = status === "uploading";
   const showDescription = uploadType === "expense" || uploadType === "other";
+  const showPaymentDrop = uploadType === "expense" || uploadType === "other";
+  const showBusinessToggle = uploadType === "expense" || uploadType === "other";
 
   return (
     <div className="bg-surface mx-auto min-h-screen max-w-lg px-4 pb-8 pt-6">
@@ -115,8 +144,39 @@ export function Upload() {
             </div>
           </div>
 
-          {/* Drop zone */}
+          {/* Main file drop zone */}
           <DropZone onFileSelected={setFile} currentFile={file} disabled={isUploading} />
+
+          {/* Business / Non-business toggle */}
+          {showBusinessToggle && (
+            <div>
+              <p className="label-uppercase mb-2">Expense type</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setBusinessPct(100)}
+                  disabled={isUploading}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    businessPct === 100
+                      ? "border-accent-blue bg-accent-blue/5 text-accent-blue"
+                      : "border-border text-text-secondary hover:border-accent-blue/40"
+                  }`}
+                >
+                  Business
+                </button>
+                <button
+                  onClick={() => setBusinessPct(0)}
+                  disabled={isUploading}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    businessPct === 0
+                      ? "border-accent-blue bg-accent-blue/5 text-accent-blue"
+                      : "border-border text-text-secondary hover:border-accent-blue/40"
+                  }`}
+                >
+                  Non-business
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Description (expense / other) */}
           {showDescription && (
@@ -132,6 +192,18 @@ export function Upload() {
                 placeholder="e.g. Internet bill March 2026"
                 disabled={isUploading}
                 className="border-thin border-border bg-surface-card text-text placeholder:text-text-tertiary focus:ring-accent-blue/30 w-full rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2"
+              />
+            </div>
+          )}
+
+          {/* Payment proof drop zone */}
+          {showPaymentDrop && (
+            <div>
+              <p className="label-uppercase mb-2">Payment proof (optional)</p>
+              <DropZone
+                onFileSelected={setPaymentFile}
+                currentFile={paymentFile}
+                disabled={isUploading}
               />
             </div>
           )}

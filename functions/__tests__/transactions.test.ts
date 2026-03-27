@@ -15,6 +15,9 @@ interface JsonBody {
     id?: string;
     updated?: boolean;
     deleted?: boolean;
+    business_pct?: string;
+    claimable_inr?: string;
+    paymentFileKey?: string;
   };
 }
 
@@ -34,8 +37,10 @@ vi.mock("../lib/sheets", () => ({
       "FY25-26/Invoices-Received/test.pdf",
       "high",
       "ts",
+      "",
     ]),
   updateRow: vi.fn().mockResolvedValue(undefined),
+  updateCell: vi.fn().mockResolvedValue(undefined),
   deleteRow: vi.fn().mockResolvedValue(undefined),
   appendRow: vi.fn().mockResolvedValue(5),
   findRowByNetInr: vi.fn().mockResolvedValue(null),
@@ -48,6 +53,7 @@ vi.mock("../lib/ocr", () => ({
 
 vi.mock("../lib/storage", () => ({
   uploadToR2: vi.fn(),
+  uploadRawToR2: vi.fn().mockResolvedValue(undefined),
   deleteFromR2: vi.fn().mockResolvedValue(undefined),
   getFromR2: vi.fn().mockResolvedValue(null),
 }));
@@ -124,6 +130,7 @@ describe("GET /api/transactions", () => {
         "file_key",
         "confidence",
         "added_at",
+        "payment_file_key",
       ],
       [
         "2026-03-15",
@@ -137,6 +144,7 @@ describe("GET /api/transactions", () => {
         "FY25-26/Expenses/internet.jpg",
         "high",
         "2026-03-15T00:00:00Z",
+        "",
       ],
       [
         "2026-03-20",
@@ -150,6 +158,7 @@ describe("GET /api/transactions", () => {
         "FY25-26/Expenses/travel.jpg",
         "medium",
         "2026-03-20T00:00:00Z",
+        "",
       ],
       [
         "2025-03-01",
@@ -163,6 +172,7 @@ describe("GET /api/transactions", () => {
         "FY24-25/Expenses/old.jpg",
         "high",
         "2025-03-01T00:00:00Z",
+        "",
       ],
     ]);
 
@@ -190,9 +200,36 @@ describe("GET /api/transactions", () => {
         "file_key",
         "confidence",
         "added_at",
+        "payment_file_key",
       ],
-      ["2026-03-15", "Bill", "internet", "2000", "100", "2000", "upi", "ACT", "key1", "high", "ts"],
-      ["2026-03-20", "Unclear", "other", "5000", "100", "5000", "card", "X", "key2", "low", "ts"],
+      [
+        "2026-03-15",
+        "Bill",
+        "internet",
+        "2000",
+        "100",
+        "2000",
+        "upi",
+        "ACT",
+        "key1",
+        "high",
+        "ts",
+        "",
+      ],
+      [
+        "2026-03-20",
+        "Unclear",
+        "other",
+        "5000",
+        "100",
+        "5000",
+        "card",
+        "X",
+        "key2",
+        "low",
+        "ts",
+        "",
+      ],
     ]);
 
     const res = await authGet(
@@ -202,6 +239,145 @@ describe("GET /api/transactions", () => {
     const body = (await res.json()) as JsonBody;
     expect(body.data!.total).toBe(1);
     expect(body.data!.rows![0]!.values.confidence).toBe("low");
+  });
+
+  it("filters by business=true", async () => {
+    const { getRows } = await import("../lib/sheets");
+    vi.mocked(getRows).mockResolvedValueOnce([
+      [
+        "date",
+        "description",
+        "category",
+        "amount_inr",
+        "business_pct",
+        "claimable_inr",
+        "paid_via",
+        "vendor",
+        "file_key",
+        "confidence",
+        "added_at",
+        "payment_file_key",
+      ],
+      [
+        "2026-03-15",
+        "Business exp",
+        "internet",
+        "2000",
+        "100",
+        "2000",
+        "upi",
+        "ACT",
+        "k1",
+        "high",
+        "ts",
+        "",
+      ],
+      ["2026-03-20", "Personal exp", "other", "3000", "0", "0", "upi", "X", "k2", "high", "ts", ""],
+    ]);
+
+    const res = await authGet(
+      "/api/transactions?tab=Expenses&fy=FY25-26&business=true",
+      ownerToken,
+    );
+    const body = (await res.json()) as JsonBody;
+    expect(body.data!.total).toBe(1);
+    expect(body.data!.rows![0]!.values.description).toBe("Business exp");
+  });
+
+  it("filters by business=false", async () => {
+    const { getRows } = await import("../lib/sheets");
+    vi.mocked(getRows).mockResolvedValueOnce([
+      [
+        "date",
+        "description",
+        "category",
+        "amount_inr",
+        "business_pct",
+        "claimable_inr",
+        "paid_via",
+        "vendor",
+        "file_key",
+        "confidence",
+        "added_at",
+        "payment_file_key",
+      ],
+      [
+        "2026-03-15",
+        "Business exp",
+        "internet",
+        "2000",
+        "100",
+        "2000",
+        "upi",
+        "ACT",
+        "k1",
+        "high",
+        "ts",
+        "",
+      ],
+      ["2026-03-20", "Personal exp", "other", "3000", "0", "0", "upi", "X", "k2", "high", "ts", ""],
+    ]);
+
+    const res = await authGet(
+      "/api/transactions?tab=Expenses&fy=FY25-26&business=false",
+      ownerToken,
+    );
+    const body = (await res.json()) as JsonBody;
+    expect(body.data!.total).toBe(1);
+    expect(body.data!.rows![0]!.values.description).toBe("Personal exp");
+  });
+
+  it("filters by search query q", async () => {
+    const { getRows } = await import("../lib/sheets");
+    vi.mocked(getRows).mockResolvedValueOnce([
+      [
+        "date",
+        "description",
+        "category",
+        "amount_inr",
+        "business_pct",
+        "claimable_inr",
+        "paid_via",
+        "vendor",
+        "file_key",
+        "confidence",
+        "added_at",
+        "payment_file_key",
+      ],
+      [
+        "2026-03-15",
+        "Internet bill",
+        "internet",
+        "2000",
+        "100",
+        "2000",
+        "upi",
+        "ACT",
+        "k1",
+        "high",
+        "ts",
+        "",
+      ],
+      [
+        "2026-03-20",
+        "Travel cab",
+        "travel",
+        "5000",
+        "100",
+        "5000",
+        "card",
+        "Uber",
+        "k2",
+        "high",
+        "ts",
+        "",
+      ],
+    ]);
+
+    const res = await authGet("/api/transactions?tab=Expenses&fy=FY25-26&q=internet", ownerToken);
+    const body = (await res.json()) as JsonBody;
+    expect(body.data!.total).toBe(1);
+    expect(body.data!.rows![0]!.values.description).toBe("Internet bill");
   });
 
   it("returns 400 for invalid tab", async () => {
@@ -246,6 +422,7 @@ describe("GET /api/transactions", () => {
         "file_key",
         "confidence",
         "added_at",
+        "payment_file_key",
       ],
       [
         "2026-01-15",
@@ -259,6 +436,7 @@ describe("GET /api/transactions", () => {
         "url",
         "high",
         "ts",
+        "",
       ],
       [
         "2026-02-10",
@@ -272,6 +450,7 @@ describe("GET /api/transactions", () => {
         "url",
         "high",
         "ts",
+        "",
       ],
       [
         "2026-01-20",
@@ -285,6 +464,7 @@ describe("GET /api/transactions", () => {
         "url",
         "high",
         "ts",
+        "",
       ],
     ]);
 
@@ -294,6 +474,59 @@ describe("GET /api/transactions", () => {
     expect(Object.keys(months)).toHaveLength(2);
     expect(months["2026-01"]).toHaveLength(2);
     expect(months["2026-02"]).toHaveLength(1);
+  });
+});
+
+describe("PATCH /api/transactions/:id/move", () => {
+  it("toggles business_pct from 100 to 0", async () => {
+    const { getRow, updateRow } = await import("../lib/sheets");
+
+    vi.mocked(getRow).mockResolvedValueOnce([
+      "2026-03-15",
+      "desc",
+      "cat",
+      "1000",
+      "100",
+      "1000",
+      "upi",
+      "V",
+      "key",
+      "high",
+      "ts",
+      "",
+    ]);
+
+    const res = await app.request(
+      "/api/transactions/Expenses-5/move",
+      {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${ownerToken}` },
+      },
+      TEST_ENV,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as JsonBody;
+    expect(body.data!.business_pct).toBe("0");
+    expect(body.data!.claimable_inr).toBe("0");
+    expect(vi.mocked(updateRow)).toHaveBeenCalledWith(
+      "Expenses",
+      5,
+      expect.arrayContaining(["0"]),
+      TEST_ENV,
+    );
+  });
+
+  it("returns 400 for non-Expenses id", async () => {
+    const res = await app.request(
+      "/api/transactions/Income-5/move",
+      {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${ownerToken}` },
+      },
+      TEST_ENV,
+    );
+    expect(res.status).toBe(400);
   });
 });
 
@@ -317,6 +550,7 @@ describe("PATCH /api/transactions/:id", () => {
             "url",
             "high",
             "ts",
+            "",
           ],
         }),
       },

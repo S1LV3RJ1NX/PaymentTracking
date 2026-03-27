@@ -17,7 +17,14 @@ vi.mock("../../api/transactions", () => ({
           description: "Internet",
           category: "internet",
           amount_inr: "2000",
+          business_pct: "100",
+          claimable_inr: "2000",
+          paid_via: "upi",
+          vendor: "ACT",
+          file_key: "FY25-26/Expenses/internet.jpg",
           confidence: "high",
+          added_at: "ts",
+          payment_file_key: "",
         },
       },
       {
@@ -29,7 +36,14 @@ vi.mock("../../api/transactions", () => ({
           description: "Travel",
           category: "travel",
           amount_inr: "5000",
+          business_pct: "100",
+          claimable_inr: "5000",
+          paid_via: "card",
+          vendor: "Uber",
+          file_key: "",
           confidence: "low",
+          added_at: "ts",
+          payment_file_key: "",
         },
       },
     ],
@@ -45,7 +59,14 @@ vi.mock("../../api/transactions", () => ({
             description: "Internet",
             category: "internet",
             amount_inr: "2000",
+            business_pct: "100",
+            claimable_inr: "2000",
+            paid_via: "upi",
+            vendor: "ACT",
+            file_key: "FY25-26/Expenses/internet.jpg",
             confidence: "high",
+            added_at: "ts",
+            payment_file_key: "",
           },
         },
       ],
@@ -59,7 +80,14 @@ vi.mock("../../api/transactions", () => ({
             description: "Travel",
             category: "travel",
             amount_inr: "5000",
+            business_pct: "100",
+            claimable_inr: "5000",
+            paid_via: "card",
+            vendor: "Uber",
+            file_key: "",
             confidence: "low",
+            added_at: "ts",
+            payment_file_key: "",
           },
         },
       ],
@@ -67,10 +95,14 @@ vi.mock("../../api/transactions", () => ({
   }),
   updateTransaction: vi.fn().mockResolvedValue(undefined),
   deleteTransaction: vi.fn().mockResolvedValue(undefined),
+  moveTransaction: vi.fn().mockResolvedValue({ business_pct: "0", claimable_inr: "0" }),
+  attachPayment: vi.fn().mockResolvedValue({ paymentFileKey: "key" }),
+  attachFira: vi.fn().mockResolvedValue({ firaFileKey: "key" }),
+  downloadFiles: vi.fn().mockResolvedValue(new Blob()),
 }));
 
 vi.mock("../../api/client", () => ({
-  api: { get: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  api: { get: vi.fn(), patch: vi.fn(), delete: vi.fn(), post: vi.fn() },
   getStoredRole: vi.fn().mockReturnValue("owner"),
   isAuthenticated: vi.fn().mockReturnValue(true),
   logout: vi.fn(),
@@ -118,9 +150,9 @@ describe("Transactions page", () => {
   it("shows edit and delete buttons for owner", async () => {
     renderPage();
     await waitFor(() => {
-      const editButtons = screen.getAllByTitle("Edit");
+      const editButtons = screen.getAllByLabelText("Edit");
       expect(editButtons.length).toBeGreaterThan(0);
-      const deleteButtons = screen.getAllByTitle("Delete");
+      const deleteButtons = screen.getAllByLabelText("Delete");
       expect(deleteButtons.length).toBeGreaterThan(0);
     });
   });
@@ -133,8 +165,8 @@ describe("Transactions page", () => {
     await waitFor(() => {
       expect(screen.getByText("Internet")).toBeInTheDocument();
     });
-    expect(screen.queryByTitle("Edit")).not.toBeInTheDocument();
-    expect(screen.queryByTitle("Delete")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Edit")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Delete")).not.toBeInTheDocument();
   });
 
   it("shows total count", async () => {
@@ -151,5 +183,36 @@ describe("Transactions page", () => {
       expect(screen.getByText("Income")).toBeInTheDocument();
     });
     await user.click(screen.getByText("Income"));
+  });
+
+  it("renders business/non-business sub-toggle", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Business")).toBeInTheDocument();
+      expect(screen.getByText("Non-business")).toBeInTheDocument();
+    });
+  });
+
+  it("renders search input", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Search transactions...")).toBeInTheDocument();
+    });
+  });
+
+  it("renders checkboxes for bulk selection", async () => {
+    renderPage();
+    await waitFor(() => {
+      const checkboxes = screen.getAllByRole("checkbox");
+      expect(checkboxes.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("shows move button for expenses", async () => {
+    renderPage();
+    await waitFor(() => {
+      const moveButtons = screen.getAllByLabelText(/Move to/);
+      expect(moveButtons.length).toBeGreaterThan(0);
+    });
   });
 });

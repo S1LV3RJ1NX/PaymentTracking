@@ -15,6 +15,7 @@ interface JsonBody {
     uploadType?: string;
     extracted?: Record<string, unknown>;
     fileKey?: string;
+    paymentFileKey?: string | null;
   };
 }
 
@@ -24,6 +25,7 @@ vi.mock("../lib/ocr", () => ({
 
 vi.mock("../lib/storage", () => ({
   uploadToR2: vi.fn().mockResolvedValue("FY25-26/Invoices-Received/test.pdf"),
+  uploadRawToR2: vi.fn().mockResolvedValue(undefined),
   buildFilename: vi.fn().mockReturnValue("test.pdf"),
   buildR2Key: vi.fn().mockReturnValue("FY25-26/Invoices-Received/test.pdf"),
   deleteFromR2: vi.fn().mockResolvedValue(undefined),
@@ -34,6 +36,7 @@ vi.mock("../lib/sheets", () => ({
   appendRow: vi.fn().mockResolvedValue(5),
   findRowByNetInr: vi.fn().mockResolvedValue(null),
   updateFiraColumns: vi.fn().mockResolvedValue(undefined),
+  updateCell: vi.fn().mockResolvedValue(undefined),
 }));
 
 const mockEnv: Env = {
@@ -154,6 +157,10 @@ describe("runUploadPipeline", () => {
         fileName: "receipt.pdf",
         uploadType: "expense",
         customDescription: null,
+        paymentFileBuffer: null,
+        paymentMimeType: null,
+        paymentFileName: null,
+        businessPct: null,
       },
       mockEnv,
     );
@@ -161,6 +168,7 @@ describe("runUploadPipeline", () => {
     expect(result.status).toBe("confirmed");
     expect(result.uploadType).toBe("expense");
     expect(result.fileKey).toBe("FY25-26/Invoices-Received/test.pdf");
+    expect(result.paymentFileKey).toBeNull();
     expect(result.extracted).toMatchObject({
       vendor: "Test Vendor",
       amount_inr: 2000,
@@ -193,6 +201,10 @@ describe("runUploadPipeline", () => {
         fileName: "bill.jpg",
         uploadType: "expense",
         customDescription: "Internet bill March 2026",
+        paymentFileBuffer: null,
+        paymentMimeType: null,
+        paymentFileName: null,
+        businessPct: null,
       },
       mockEnv,
     );
@@ -221,9 +233,7 @@ describe("runUploadPipeline", () => {
       },
     });
 
-    vi.mocked(appendRow)
-      .mockResolvedValueOnce(10) // Income row
-      .mockResolvedValueOnce(15); // Fee expense row
+    vi.mocked(appendRow).mockResolvedValueOnce(10).mockResolvedValueOnce(15);
 
     const result = await runUploadPipeline(
       {
@@ -232,6 +242,10 @@ describe("runUploadPipeline", () => {
         fileName: "skydo.pdf",
         uploadType: "skydo_invoice",
         customDescription: null,
+        paymentFileBuffer: null,
+        paymentMimeType: null,
+        paymentFileName: null,
+        businessPct: null,
       },
       mockEnv,
     );
@@ -240,7 +254,6 @@ describe("runUploadPipeline", () => {
     expect(result.incomeRowNum).toBe(10);
     expect(result.feeRowNum).toBe(15);
 
-    // Verify two appendRow calls: Income + Expenses
     expect(appendRow).toHaveBeenCalledTimes(2);
     const incomeCall = vi.mocked(appendRow).mock.calls[0]!;
     expect(incomeCall[0]).toBe("Income");
@@ -282,6 +295,10 @@ describe("runUploadPipeline", () => {
         fileName: "fira.pdf",
         uploadType: "fira",
         customDescription: null,
+        paymentFileBuffer: null,
+        paymentMimeType: null,
+        paymentFileName: null,
+        businessPct: null,
       },
       mockEnv,
     );
@@ -324,6 +341,10 @@ describe("runUploadPipeline", () => {
         fileName: "fira2.pdf",
         uploadType: "fira",
         customDescription: null,
+        paymentFileBuffer: null,
+        paymentMimeType: null,
+        paymentFileName: null,
+        businessPct: null,
       },
       mockEnv,
     );
@@ -358,10 +379,54 @@ describe("runUploadPipeline", () => {
         fileName: "unknown.png",
         uploadType: "expense",
         customDescription: null,
+        paymentFileBuffer: null,
+        paymentMimeType: null,
+        paymentFileName: null,
+        businessPct: null,
       },
       mockEnv,
     );
 
     expect(result.status).toBe("review");
+  });
+
+  it("respects businessPct override", async () => {
+    const { extractDocument } = await import("../lib/ocr");
+    const { appendRow } = await import("../lib/sheets");
+
+    vi.mocked(extractDocument).mockResolvedValueOnce({
+      type: "expense",
+      data: {
+        vendor: "Shop",
+        amount_inr: 1000,
+        date: "2026-03-26",
+        upi_transaction_id: null,
+        category: "other",
+        payment_method: "upi",
+        description: "Personal",
+        business_pct: 100,
+        confidence: "high",
+        review_reason: null,
+      },
+    });
+
+    await runUploadPipeline(
+      {
+        fileBuffer: new ArrayBuffer(8),
+        mimeType: "image/jpeg",
+        fileName: "personal.jpg",
+        uploadType: "expense",
+        customDescription: null,
+        paymentFileBuffer: null,
+        paymentMimeType: null,
+        paymentFileName: null,
+        businessPct: 0,
+      },
+      mockEnv,
+    );
+
+    const expenseCall = vi.mocked(appendRow).mock.calls[0]!;
+    expect(expenseCall[1]![4]).toBe("0");
+    expect(expenseCall[1]![5]).toBe("0");
   });
 });

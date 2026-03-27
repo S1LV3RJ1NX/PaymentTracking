@@ -9,8 +9,10 @@ export type UploadStatus = "idle" | "uploading" | "success" | "error";
 interface UploadState {
   status: UploadStatus;
   file: File | null;
+  paymentFile: File | null;
   uploadType: UploadType;
   description: string;
+  businessPct: number;
   result: UploadResponse["data"] | null;
   error: string | null;
   progress: number;
@@ -19,8 +21,10 @@ interface UploadState {
 const INITIAL_STATE: UploadState = {
   status: "idle",
   file: null,
+  paymentFile: null,
   uploadType: "expense",
   description: "",
+  businessPct: 100,
   result: null,
   error: null,
   progress: 0,
@@ -33,12 +37,20 @@ export function useUpload() {
     setState((s) => ({ ...s, file, status: "idle", result: null, error: null }));
   }, []);
 
+  const setPaymentFile = useCallback((paymentFile: File | null) => {
+    setState((s) => ({ ...s, paymentFile }));
+  }, []);
+
   const setUploadType = useCallback((uploadType: UploadType) => {
     setState((s) => ({ ...s, uploadType }));
   }, []);
 
   const setDescription = useCallback((description: string) => {
     setState((s) => ({ ...s, description }));
+  }, []);
+
+  const setBusinessPct = useCallback((businessPct: number) => {
+    setState((s) => ({ ...s, businessPct }));
   }, []);
 
   const submit = useCallback(async () => {
@@ -54,7 +66,14 @@ export function useUpload() {
     }, 500);
 
     try {
-      const res = await uploadFile(state.file, state.uploadType, state.description || undefined);
+      const isExpenseType = state.uploadType === "expense" || state.uploadType === "other";
+      const res = await uploadFile(
+        state.file,
+        state.uploadType,
+        state.description || undefined,
+        state.paymentFile ?? undefined,
+        isExpenseType ? state.businessPct : undefined,
+      );
       clearInterval(progressInterval);
       setState((s) => ({
         ...s,
@@ -79,11 +98,20 @@ export function useUpload() {
       }
       setState((s) => ({ ...s, status: "error", error: message, progress: 0 }));
     }
-  }, [state.file, state.uploadType, state.description]);
+  }, [state.file, state.paymentFile, state.uploadType, state.description, state.businessPct]);
 
   const reset = useCallback(() => {
     setState(INITIAL_STATE);
   }, []);
 
-  return { ...state, setFile, setUploadType, setDescription, submit, reset };
+  return {
+    ...state,
+    setFile,
+    setPaymentFile,
+    setUploadType,
+    setDescription,
+    setBusinessPct,
+    submit,
+    reset,
+  };
 }

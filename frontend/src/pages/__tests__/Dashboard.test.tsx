@@ -9,6 +9,7 @@ vi.mock("../../api/dashboard", () => ({
     fy: "FY25-26",
     income: { ytd_inr: 672000, by_client: { "Client A": 419000, "Client B": 253000 } },
     expenses: { ytd_claimable: 7000, by_category: { internet: 2000, travel: 5000 } },
+    non_business_expenses: 3000,
     review_count: 3,
   }),
   getMonthlyBreakdown: vi.fn().mockResolvedValue({
@@ -46,7 +47,8 @@ describe("Dashboard page", () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByText("YTD Income")).toBeInTheDocument();
-      expect(screen.getByText("YTD Expenses")).toBeInTheDocument();
+      expect(screen.getByText("Business Expenses")).toBeInTheDocument();
+      expect(screen.getByText("Non-business Expenses")).toBeInTheDocument();
       expect(screen.getByText("Needs Review")).toBeInTheDocument();
     });
   });

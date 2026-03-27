@@ -89,6 +89,17 @@ export async function deleteFromR2(key: string, env: Env): Promise<void> {
   await env.FINANCE_R2.delete(key);
 }
 
+export async function uploadRawToR2(
+  key: string,
+  fileBuffer: ArrayBuffer,
+  mimeType: string,
+  env: Env,
+): Promise<void> {
+  await env.FINANCE_R2.put(key, fileBuffer, {
+    httpMetadata: { contentType: mimeType },
+  });
+}
+
 export async function getFromR2(key: string, env: Env): Promise<R2ObjectBody | null> {
   return env.FINANCE_R2.get(key);
 }
