@@ -3,6 +3,7 @@ import axios from "axios";
 import { uploadFile } from "../api/upload";
 import type { UploadResponse } from "../api/upload";
 import type { UploadType } from "../api/types";
+import { maybeCompressImage } from "../lib/compressImage";
 
 export type UploadStatus = "idle" | "uploading" | "success" | "error";
 
@@ -66,12 +67,17 @@ export function useUpload() {
     }, 500);
 
     try {
+      const compressed = await maybeCompressImage(state.file);
+      const compressedPayment = state.paymentFile
+        ? await maybeCompressImage(state.paymentFile)
+        : undefined;
+
       const isExpenseType = state.uploadType === "expense" || state.uploadType === "other";
       const res = await uploadFile(
-        state.file,
+        compressed,
         state.uploadType,
         state.description || undefined,
-        state.paymentFile ?? undefined,
+        compressedPayment,
         isExpenseType ? state.businessPct : undefined,
       );
       clearInterval(progressInterval);

@@ -9,6 +9,7 @@ import {
   attachFira,
 } from "../api/transactions";
 import type { TransactionRow } from "../api/transactions";
+import { maybeCompressImage } from "../lib/compressImage";
 
 export function useTransactions(fy: string) {
   const [tab, setTab] = useState<"Income" | "Expenses">("Expenses");
@@ -72,7 +73,7 @@ export function useTransactions(fy: string) {
 
   const addPayment = useCallback(
     async (id: string, file: File) => {
-      await attachPayment(id, file);
+      await attachPayment(id, await maybeCompressImage(file));
       await fetchData();
     },
     [fetchData],
@@ -80,7 +81,7 @@ export function useTransactions(fy: string) {
 
   const addBill = useCallback(
     async (id: string, file: File) => {
-      await attachBill(id, file);
+      await attachBill(id, await maybeCompressImage(file));
       await fetchData();
     },
     [fetchData],
@@ -88,7 +89,7 @@ export function useTransactions(fy: string) {
 
   const addFira = useCallback(
     async (id: string, file: File) => {
-      await attachFira(id, file);
+      await attachFira(id, await maybeCompressImage(file));
       await fetchData();
     },
     [fetchData],

@@ -742,7 +742,8 @@ app.get("/dashboard/monthly", async (c) => {
     ]);
 
     const monthlyIncome: Record<string, number> = {};
-    const monthlyExpenses: Record<string, number> = {};
+    const monthlyBizExp: Record<string, number> = {};
+    const monthlyNonBizExp: Record<string, number> = {};
 
     for (let i = 1; i < incomeRows.length; i++) {
       const row = incomeRows[i];
@@ -762,16 +763,31 @@ app.get("/dashboard/monthly", async (c) => {
       if (eDate < start || eDate > end) continue;
 
       const month = eDate.slice(0, 7);
-      const claimable = parseFloat((row[5] ?? "0").replace(/,/g, ""));
-      if (!isNaN(claimable)) monthlyExpenses[month] = (monthlyExpenses[month] ?? 0) + claimable;
+      const bpct = row[4] ?? "100";
+      const amount = parseFloat((row[3] ?? "0").replace(/,/g, ""));
+      if (isNaN(amount)) continue;
+
+      if (bpct === "0") {
+        monthlyNonBizExp[month] = (monthlyNonBizExp[month] ?? 0) + amount;
+      } else {
+        const claimable = parseFloat((row[5] ?? "0").replace(/,/g, ""));
+        monthlyBizExp[month] =
+          (monthlyBizExp[month] ?? 0) + (isNaN(claimable) ? amount : claimable);
+      }
     }
 
-    const allMonths = new Set([...Object.keys(monthlyIncome), ...Object.keys(monthlyExpenses)]);
+    const allMonths = new Set([
+      ...Object.keys(monthlyIncome),
+      ...Object.keys(monthlyBizExp),
+      ...Object.keys(monthlyNonBizExp),
+    ]);
 
     const months = [...allMonths].sort().map((month) => ({
       month,
       income: monthlyIncome[month] ?? 0,
-      expenses: monthlyExpenses[month] ?? 0,
+      expenses: (monthlyBizExp[month] ?? 0) + (monthlyNonBizExp[month] ?? 0),
+      businessExpenses: monthlyBizExp[month] ?? 0,
+      nonBusinessExpenses: monthlyNonBizExp[month] ?? 0,
     }));
 
     return c.json({ success: true, data: { fy, months } });

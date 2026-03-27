@@ -12,6 +12,8 @@ export interface MonthlyEntry {
   month: string;
   income: number;
   expenses: number;
+  businessExpenses: number;
+  nonBusinessExpenses: number;
 }
 
 export interface MonthlyResponse {

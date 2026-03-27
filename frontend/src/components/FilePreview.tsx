@@ -10,11 +10,20 @@ interface FilePreviewProps {
 
 type TabType = "document" | "payment";
 
-function PreviewContent({ fileKey }: { fileKey: string }) {
-  const [objectUrl, setObjectUrl] = useState<string | null>(null);
-  const [mimeType, setMimeType] = useState<string>("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+interface BlobState {
+  objectUrl: string | null;
+  mimeType: string;
+  loading: boolean;
+  error: string | null;
+}
+
+function useFileBlob(fileKey: string): BlobState {
+  const [state, setState] = useState<BlobState>({
+    objectUrl: null,
+    mimeType: "",
+    loading: true,
+    error: null,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -25,20 +34,19 @@ function PreviewContent({ fileKey }: { fileKey: string }) {
           responseType: "blob",
         });
         if (cancelled) return;
-
         const blob = res.data as Blob;
-        setMimeType(blob.type);
-        setObjectUrl(URL.createObjectURL(blob));
+        setState({
+          objectUrl: URL.createObjectURL(blob),
+          mimeType: blob.type,
+          loading: false,
+          error: null,
+        });
       } catch {
-        if (!cancelled) setError("Failed to load file");
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setState((s) => ({ ...s, loading: false, error: "Failed to load file" }));
       }
     }
 
-    setLoading(true);
-    setError(null);
-    setObjectUrl(null);
+    setState({ objectUrl: null, mimeType: "", loading: true, error: null });
     void fetchFile();
     return () => {
       cancelled = true;
@@ -47,63 +55,112 @@ function PreviewContent({ fileKey }: { fileKey: string }) {
 
   useEffect(() => {
     return () => {
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
     };
-  }, [objectUrl]);
+  }, [state.objectUrl]);
 
+  return state;
+}
+
+function PreviewBody({
+  objectUrl,
+  mimeType,
+  fileName,
+  loading,
+  error,
+}: {
+  objectUrl: string | null;
+  mimeType: string;
+  fileName: string;
+  loading: boolean;
+  error: string | null;
+}) {
   const isImage = mimeType.startsWith("image/");
   const isPdf = mimeType === "application/pdf";
+
+  if (loading) {
+    return (
+      <div className="flex h-48 items-center justify-center">
+        <div className="border-border border-t-accent-blue h-6 w-6 animate-spin rounded-full border-2" />
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="text-accent-red flex h-48 items-center justify-center text-sm">{error}</div>
+    );
+  }
+  if (!objectUrl) return null;
+
+  if (isImage) {
+    return (
+      <img
+        src={objectUrl}
+        alt={fileName}
+        className="mx-auto max-h-full rounded-lg object-contain"
+      />
+    );
+  }
+  if (isPdf) {
+    return (
+      <iframe src={objectUrl} title={fileName} className="h-full w-full rounded-lg border-0" />
+    );
+  }
+  return (
+    <div className="text-text-secondary flex h-48 flex-col items-center justify-center gap-3">
+      <span className="text-3xl">📄</span>
+      <span className="text-sm">Preview not available for this file type</span>
+    </div>
+  );
+}
+
+function DownloadButton({ objectUrl, fileName }: { objectUrl: string | null; fileName: string }) {
+  if (!objectUrl) return null;
+
+  return (
+    <div className="border-border shrink-0 border-t px-4 py-3 text-center">
+      <a
+        href={objectUrl}
+        download={fileName}
+        className="bg-accent-blue hover:bg-accent-blue/90 inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-medium text-white transition-colors"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+        Download
+      </a>
+    </div>
+  );
+}
+
+function FilePane({ fileKey }: { fileKey: string }) {
+  const { objectUrl, mimeType, loading, error } = useFileBlob(fileKey);
   const fileName = fileKey.split("/").pop() ?? "file";
 
   return (
     <>
-      {loading && (
-        <div className="flex h-48 items-center justify-center">
-          <div className="border-border border-t-accent-blue h-6 w-6 animate-spin rounded-full border-2" />
-        </div>
-      )}
-
-      {error && (
-        <div className="text-accent-red flex h-48 items-center justify-center text-sm">{error}</div>
-      )}
-
-      {!loading && !error && objectUrl && isImage && (
-        <img
-          src={objectUrl}
-          alt={fileName}
-          className="mx-auto max-h-[70vh] rounded-lg object-contain"
+      <div className="min-h-0 flex-1 overflow-auto p-4">
+        <PreviewBody
+          objectUrl={objectUrl}
+          mimeType={mimeType}
+          fileName={fileName}
+          loading={loading}
+          error={error}
         />
-      )}
-
-      {!loading && !error && objectUrl && isPdf && (
-        <iframe src={objectUrl} title={fileName} className="h-[70vh] w-full rounded-lg border-0" />
-      )}
-
-      {!loading && !error && objectUrl && !isImage && !isPdf && (
-        <div className="text-text-secondary flex h-48 flex-col items-center justify-center gap-3">
-          <span className="text-3xl">📄</span>
-          <span className="text-sm">Preview not available for this file type</span>
-          <a
-            href={objectUrl}
-            download={fileName}
-            className="text-accent-blue text-sm hover:underline"
-          >
-            Download instead
-          </a>
-        </div>
-      )}
-
-      {!loading && !error && objectUrl && (
-        <div className="mt-3 text-center">
-          <a
-            href={objectUrl}
-            download={fileName}
-            className="border-thin border-border text-text-secondary hover:bg-surface-muted inline-block rounded-md px-2.5 py-1 text-xs"
-          >
-            Download
-          </a>
-        </div>
-      )}
+      </div>
+      <DownloadButton objectUrl={objectUrl} fileName={fileName} />
     </>
   );
 }
@@ -117,14 +174,15 @@ export function FilePreview({ fileKey, paymentFileKey, tabLabels, onClose }: Fil
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-4"
       onClick={onClose}
     >
       <div
-        className="border-thin border-border bg-surface-card relative flex max-h-[85vh] w-full max-w-2xl flex-col rounded-xl"
+        className="border-thin border-border bg-surface-card relative flex max-h-[92vh] w-full max-w-2xl flex-col rounded-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="border-border flex items-center justify-between border-b px-4 py-3">
+        {/* Header */}
+        <div className="border-border flex shrink-0 items-center justify-between border-b px-4 py-3">
           <span className="text-text truncate text-sm font-medium">{fileName}</span>
           <button
             onClick={onClose}
@@ -148,8 +206,9 @@ export function FilePreview({ fileKey, paymentFileKey, tabLabels, onClose }: Fil
           </button>
         </div>
 
+        {/* Tabs */}
         {hasTabs && (
-          <div className="border-border flex gap-1 border-b px-4 py-2">
+          <div className="border-border flex shrink-0 gap-1 border-b px-4 py-2">
             <button
               onClick={() => setActiveTab("document")}
               className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
@@ -173,9 +232,8 @@ export function FilePreview({ fileKey, paymentFileKey, tabLabels, onClose }: Fil
           </div>
         )}
 
-        <div className="flex-1 overflow-auto p-4">
-          <PreviewContent key={currentKey} fileKey={currentKey} />
-        </div>
+        {/* Preview + Download (single fetch per key) */}
+        <FilePane key={currentKey} fileKey={currentKey} />
       </div>
     </div>
   );

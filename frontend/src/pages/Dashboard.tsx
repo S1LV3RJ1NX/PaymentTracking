@@ -1,7 +1,17 @@
 import { useDashboard } from "../hooks/useDashboard";
 import { MetricCard } from "../components/MetricCard";
 import { Spinner } from "../components/Spinner";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  CartesianGrid,
+} from "recharts";
+import type { TooltipProps } from "recharts";
 import { useNavigate } from "react-router-dom";
 import { getStoredRole } from "../api/client";
 import { useFY } from "../context/FYContext";
@@ -32,6 +42,45 @@ function formatMonthLabel(month: string): string {
   return names[parseInt(m!, 10) - 1] ?? month;
 }
 
+const COLOR_MAP: Record<string, string> = {
+  income: "#0F6E56",
+  businessExpenses: "#A32D2D",
+  nonBusinessExpenses: "#D4836A",
+};
+
+function ChartTooltip({ active, payload, label }: TooltipProps<number, string>) {
+  if (!active || !payload?.length) return null;
+
+  const hoveredKey = payload[0]!.dataKey as string;
+  const row = payload[0]!.payload as Record<string, number>;
+  const isExpense = hoveredKey === "businessExpenses" || hoveredKey === "nonBusinessExpenses";
+
+  return (
+    <div
+      className="bg-surface-card rounded-lg border px-3 py-2 shadow-sm"
+      style={{ fontSize: 12, border: "0.5px solid #d3d1c7" }}
+    >
+      <p className="text-text mb-1 font-medium">{label}</p>
+      {isExpense ? (
+        <>
+          <p style={{ color: COLOR_MAP.businessExpenses }}>
+            Business : {formatINR(row.businessExpenses ?? 0)}
+          </p>
+          <p style={{ color: COLOR_MAP.nonBusinessExpenses }}>
+            Non-business : {formatINR(row.nonBusinessExpenses ?? 0)}
+          </p>
+          <p className="text-text border-border mt-1 border-t pt-1 font-medium">
+            Total Expenses :{" "}
+            {formatINR((row.businessExpenses ?? 0) + (row.nonBusinessExpenses ?? 0))}
+          </p>
+        </>
+      ) : (
+        <p style={{ color: COLOR_MAP.income }}>Income : {formatINR(row.income ?? 0)}</p>
+      )}
+    </div>
+  );
+}
+
 export function Dashboard() {
   const { fy } = useFY();
   const { summary, monthly, loading, error } = useDashboard(fy);
@@ -42,7 +91,8 @@ export function Dashboard() {
     ? monthly.map((m) => ({
         month: formatMonthLabel(m.month),
         income: Math.round(m.income),
-        expenses: Math.round(m.expenses),
+        businessExpenses: Math.round(m.businessExpenses),
+        nonBusinessExpenses: Math.round(m.nonBusinessExpenses),
       }))
     : [];
 
@@ -86,9 +136,10 @@ export function Dashboard() {
               subtitle="Not tax-deductible"
             />
             <MetricCard
-              label="Needs Review"
-              value={String(summary.review_count)}
-              subtitle={summary.review_count > 0 ? "Click to review" : "All clear"}
+              label="Total Expenses"
+              value={formatINR(summary.expenses.ytd_claimable + summary.non_business_expenses)}
+              subtitle="Business + Non-business"
+              valueColor="red"
             />
           </div>
 
@@ -96,8 +147,8 @@ export function Dashboard() {
           {chartData.length > 0 && (
             <div className="card border-thin border-border bg-surface-card mb-5 rounded-xl px-5 py-4">
               <div className="label-uppercase mb-4">Monthly Income vs Expenses</div>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={chartData} barGap={2}>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={chartData} barGap={4}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#eceae3" />
                   <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#888780" }} />
                   <YAxis
@@ -105,15 +156,29 @@ export function Dashboard() {
                     tickFormatter={(v: number) => formatINR(v)}
                   />
                   <Tooltip
-                    formatter={(value: number) => formatINR(value)}
-                    contentStyle={{
-                      fontSize: 12,
-                      borderRadius: 8,
-                      border: "0.5px solid #d3d1c7",
-                    }}
+                    content={<ChartTooltip />}
+                    shared={false}
+                    cursor={{ fill: "transparent" }}
+                  />
+                  <Legend
+                    formatter={(value: string) =>
+                      value === "income"
+                        ? "Income"
+                        : value === "businessExpenses"
+                          ? "Business Exp."
+                          : "Non-business Exp."
+                    }
+                    iconSize={10}
+                    wrapperStyle={{ fontSize: 11 }}
                   />
                   <Bar dataKey="income" fill="#0F6E56" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="expenses" fill="#A32D2D" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="businessExpenses" stackId="expenses" fill="#A32D2D" />
+                  <Bar
+                    dataKey="nonBusinessExpenses"
+                    stackId="expenses"
+                    fill="#D4836A"
+                    radius={[3, 3, 0, 0]}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </div>

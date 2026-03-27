@@ -49,14 +49,14 @@ describe("Dashboard page", () => {
       expect(screen.getByText("YTD Income")).toBeInTheDocument();
       expect(screen.getByText("Business Expenses")).toBeInTheDocument();
       expect(screen.getByText("Non-business Expenses")).toBeInTheDocument();
-      expect(screen.getByText("Needs Review")).toBeInTheDocument();
+      expect(screen.getByText("Total Expenses")).toBeInTheDocument();
     });
   });
 
-  it("shows review count", async () => {
+  it("shows total expenses value", async () => {
     renderPage();
     await waitFor(() => {
-      expect(screen.getByText("3")).toBeInTheDocument();
+      expect(screen.getByText("₹10,000")).toBeInTheDocument();
     });
   });
 
