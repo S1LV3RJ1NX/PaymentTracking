@@ -7,7 +7,7 @@ import { LoginRequestSchema } from "./types";
 import { verifyJwt, verifyPassword, signJwt } from "./auth";
 import { runUploadPipeline } from "./upload-pipeline";
 import { getRows, getRow, updateRow, deleteRow } from "./sheets";
-import { deleteFileFromDrive } from "./drive";
+import { deleteFromR2, getFromR2 } from "./storage";
 import { getCurrentFY, getFYDateRange } from "./fy";
 
 type HonoEnv = { Bindings: Env; Variables: { role: Role; username: string } };
@@ -133,12 +133,33 @@ app.post("/upload", ownerOnly, async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Upload processing failed";
     console.error("[upload]", msg, err instanceof Error ? err.stack : "");
-    const code = msg.includes("OCR")
-      ? "OCR_FAILED"
-      : msg.includes("Drive")
-        ? "DRIVE_ERROR"
-        : "SHEET_ERROR";
+    const code = msg.includes("OCR") ? "OCR_FAILED" : "STORAGE_ERROR";
     return c.json({ success: false, error: msg, code }, 500);
+  }
+});
+
+app.get("/files/*", async (c) => {
+  const key = c.req.path.replace("/api/files/", "");
+  if (!key) {
+    return c.json({ success: false, error: "File key is required", code: "VALIDATION_ERROR" }, 400);
+  }
+
+  try {
+    const object = await getFromR2(decodeURIComponent(key), c.env);
+    if (!object) {
+      return c.json({ success: false, error: "File not found", code: "NOT_FOUND" }, 404);
+    }
+
+    const headers = new Headers();
+    headers.set("Content-Type", object.httpMetadata?.contentType ?? "application/octet-stream");
+    headers.set("Cache-Control", "private, max-age=3600");
+    headers.set("Content-Disposition", "inline");
+
+    return new Response(object.body, { headers });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to fetch file";
+    console.error("[files]", msg);
+    return c.json({ success: false, error: msg, code: "STORAGE_ERROR" }, 500);
   }
 });
 
@@ -160,7 +181,7 @@ const INCOME_COLS = [
   "skydo_prn",
   "fira_drive_url",
   "fira_ref",
-  "drive_url",
+  "file_key",
   "confidence",
   "added_at",
 ];
@@ -174,7 +195,7 @@ const EXPENSE_COLS = [
   "claimable_inr",
   "paid_via",
   "vendor",
-  "drive_url",
+  "file_key",
   "confidence",
   "added_at",
 ];
@@ -307,18 +328,18 @@ app.delete("/transactions/:id", ownerOnly, async (c) => {
 
   try {
     const row = await getRow(tab, rowNum, c.env);
-    const driveUrl = row[8] ?? "";
+    const fileKey = row[8] ?? "";
 
-    if (driveUrl) {
+    if (fileKey) {
       try {
-        await deleteFileFromDrive(driveUrl, c.env);
-      } catch (driveErr) {
-        console.error("[transactions/delete] Drive cleanup failed (continuing):", driveErr);
+        await deleteFromR2(fileKey, c.env);
+      } catch (r2Err) {
+        console.error("[transactions/delete] R2 cleanup failed (continuing):", r2Err);
       }
     }
 
     await deleteRow(tab, rowNum, c.env);
-    return c.json({ success: true, data: { id, deleted: true, driveDeleted: !!driveUrl } });
+    return c.json({ success: true, data: { id, deleted: true, fileDeleted: !!fileKey } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to delete transaction";
     console.error("[transactions/delete]", msg);

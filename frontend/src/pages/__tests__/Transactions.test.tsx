@@ -118,9 +118,9 @@ describe("Transactions page", () => {
   it("shows edit and delete buttons for owner", async () => {
     renderPage();
     await waitFor(() => {
-      const editButtons = screen.getAllByText("Edit");
+      const editButtons = screen.getAllByTitle("Edit");
       expect(editButtons.length).toBeGreaterThan(0);
-      const deleteButtons = screen.getAllByText("Delete");
+      const deleteButtons = screen.getAllByTitle("Delete");
       expect(deleteButtons.length).toBeGreaterThan(0);
     });
   });
@@ -133,8 +133,8 @@ describe("Transactions page", () => {
     await waitFor(() => {
       expect(screen.getByText("Internet")).toBeInTheDocument();
     });
-    expect(screen.queryByText("Edit")).not.toBeInTheDocument();
-    expect(screen.queryByText("Delete")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Edit")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Delete")).not.toBeInTheDocument();
   });
 
   it("shows total count", async () => {

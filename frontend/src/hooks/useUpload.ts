@@ -71,8 +71,8 @@ export function useUpload() {
           message = err.response?.data?.error ?? message;
         } else if (code === "OCR_FAILED") {
           message = "Could not read the document. Try a clearer image or PDF.";
-        } else if (code === "DRIVE_ERROR") {
-          message = "Failed to save file to Drive. Please try again.";
+        } else if (code === "STORAGE_ERROR") {
+          message = "Failed to save file. Please try again.";
         } else if (err.code === "ECONNABORTED") {
           message = "Upload timed out. Check your connection and try again.";
         }

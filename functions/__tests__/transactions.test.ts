@@ -31,7 +31,7 @@ vi.mock("../lib/sheets", () => ({
       "1000",
       "upi",
       "V",
-      "https://drive.google.com/file/d/abc123/view",
+      "FY25-26/Invoices-Received/test.pdf",
       "high",
       "ts",
     ]),
@@ -46,9 +46,10 @@ vi.mock("../lib/ocr", () => ({
   extractDocument: vi.fn(),
 }));
 
-vi.mock("../lib/drive", () => ({
-  uploadToDrive: vi.fn(),
-  deleteFileFromDrive: vi.fn().mockResolvedValue(undefined),
+vi.mock("../lib/storage", () => ({
+  uploadToR2: vi.fn(),
+  deleteFromR2: vi.fn().mockResolvedValue(undefined),
+  getFromR2: vi.fn().mockResolvedValue(null),
 }));
 
 const TEST_ENV = {
@@ -56,10 +57,10 @@ const TEST_ENV = {
   ADMIN_PASSWORD_HASH: "",
   CA_PASSWORD_HASH: "",
   FINANCE_KV: {} as KVNamespace,
+  FINANCE_R2: {} as R2Bucket,
   ANTHROPIC_API_KEY: "sk-ant-test",
   GOOGLE_SERVICE_ACCOUNT_EMAIL: "test@test.iam.gserviceaccount.com",
   GOOGLE_PRIVATE_KEY: "fake-key",
-  GOOGLE_DRIVE_ROOT_FOLDER_ID: "fake-folder-id",
   GOOGLE_SHEET_ID: "fake-sheet-id",
 };
 
@@ -120,7 +121,7 @@ describe("GET /api/transactions", () => {
         "claimable_inr",
         "paid_via",
         "vendor",
-        "drive_url",
+        "file_key",
         "confidence",
         "added_at",
       ],
@@ -133,7 +134,7 @@ describe("GET /api/transactions", () => {
         "2000",
         "upi",
         "ACT",
-        "https://drive",
+        "FY25-26/Expenses/internet.jpg",
         "high",
         "2026-03-15T00:00:00Z",
       ],
@@ -146,7 +147,7 @@ describe("GET /api/transactions", () => {
         "5000",
         "card",
         "Uber",
-        "https://drive",
+        "FY25-26/Expenses/travel.jpg",
         "medium",
         "2026-03-20T00:00:00Z",
       ],
@@ -159,7 +160,7 @@ describe("GET /api/transactions", () => {
         "1000",
         "upi",
         "X",
-        "https://drive",
+        "FY24-25/Expenses/old.jpg",
         "high",
         "2025-03-01T00:00:00Z",
       ],
@@ -186,12 +187,12 @@ describe("GET /api/transactions", () => {
         "claimable_inr",
         "paid_via",
         "vendor",
-        "drive_url",
+        "file_key",
         "confidence",
         "added_at",
       ],
-      ["2026-03-15", "Bill", "internet", "2000", "100", "2000", "upi", "ACT", "url", "high", "ts"],
-      ["2026-03-20", "Unclear", "other", "5000", "100", "5000", "card", "X", "url", "low", "ts"],
+      ["2026-03-15", "Bill", "internet", "2000", "100", "2000", "upi", "ACT", "key1", "high", "ts"],
+      ["2026-03-20", "Unclear", "other", "5000", "100", "5000", "card", "X", "key2", "low", "ts"],
     ]);
 
     const res = await authGet(
@@ -242,7 +243,7 @@ describe("GET /api/transactions", () => {
         "claimable_inr",
         "paid_via",
         "vendor",
-        "drive_url",
+        "file_key",
         "confidence",
         "added_at",
       ],
@@ -355,9 +356,9 @@ describe("PATCH /api/transactions/:id", () => {
 });
 
 describe("DELETE /api/transactions/:id", () => {
-  it("deletes a row and its Drive file successfully", async () => {
+  it("deletes a row and its R2 file successfully", async () => {
     const { getRow, deleteRow } = await import("../lib/sheets");
-    const { deleteFileFromDrive } = await import("../lib/drive");
+    const { deleteFromR2 } = await import("../lib/storage");
 
     const res = await app.request(
       "/api/transactions/Income-10",
@@ -371,10 +372,10 @@ describe("DELETE /api/transactions/:id", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as JsonBody;
     expect(body.data!.deleted).toBe(true);
-    expect((body.data as Record<string, unknown>).driveDeleted).toBe(true);
+    expect((body.data as Record<string, unknown>).fileDeleted).toBe(true);
     expect(vi.mocked(getRow)).toHaveBeenCalledWith("Income", 10, TEST_ENV);
-    expect(vi.mocked(deleteFileFromDrive)).toHaveBeenCalledWith(
-      "https://drive.google.com/file/d/abc123/view",
+    expect(vi.mocked(deleteFromR2)).toHaveBeenCalledWith(
+      "FY25-26/Invoices-Received/test.pdf",
       TEST_ENV,
     );
     expect(vi.mocked(deleteRow)).toHaveBeenCalledWith("Income", 10, TEST_ENV);

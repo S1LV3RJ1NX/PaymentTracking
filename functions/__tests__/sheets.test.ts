@@ -11,13 +11,13 @@ vi.stubGlobal("fetch", mockFetch);
 
 const mockEnv: Env = {
   FINANCE_KV: {} as KVNamespace,
+  FINANCE_R2: {} as R2Bucket,
   JWT_SECRET: "test-secret",
   ADMIN_PASSWORD_HASH: "hash",
   CA_PASSWORD_HASH: "hash",
   ANTHROPIC_API_KEY: "key",
   GOOGLE_SERVICE_ACCOUNT_EMAIL: "test@test.iam.gserviceaccount.com",
   GOOGLE_PRIVATE_KEY: "fake-key",
-  GOOGLE_DRIVE_ROOT_FOLDER_ID: "root-folder",
   GOOGLE_SHEET_ID: "sheet-123",
 };
 

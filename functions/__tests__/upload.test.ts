@@ -14,7 +14,7 @@ interface JsonBody {
     status?: string;
     uploadType?: string;
     extracted?: Record<string, unknown>;
-    driveUrl?: string;
+    fileKey?: string;
   };
 }
 
@@ -22,9 +22,12 @@ vi.mock("../lib/ocr", () => ({
   extractDocument: vi.fn(),
 }));
 
-vi.mock("../lib/drive", () => ({
-  uploadToDrive: vi.fn().mockResolvedValue("https://drive.google.com/file/d/abc/view"),
+vi.mock("../lib/storage", () => ({
+  uploadToR2: vi.fn().mockResolvedValue("FY25-26/Invoices-Received/test.pdf"),
   buildFilename: vi.fn().mockReturnValue("test.pdf"),
+  buildR2Key: vi.fn().mockReturnValue("FY25-26/Invoices-Received/test.pdf"),
+  deleteFromR2: vi.fn().mockResolvedValue(undefined),
+  getFromR2: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("../lib/sheets", () => ({
@@ -38,10 +41,10 @@ const mockEnv: Env = {
   ADMIN_PASSWORD_HASH: "",
   CA_PASSWORD_HASH: "",
   FINANCE_KV: {} as KVNamespace,
+  FINANCE_R2: {} as R2Bucket,
   ANTHROPIC_API_KEY: "sk-ant-test",
   GOOGLE_SERVICE_ACCOUNT_EMAIL: "test@test.iam.gserviceaccount.com",
   GOOGLE_PRIVATE_KEY: "fake-key",
-  GOOGLE_DRIVE_ROOT_FOLDER_ID: "fake-folder-id",
   GOOGLE_SHEET_ID: "fake-sheet-id",
 };
 
@@ -157,7 +160,7 @@ describe("runUploadPipeline", () => {
 
     expect(result.status).toBe("confirmed");
     expect(result.uploadType).toBe("expense");
-    expect(result.driveUrl).toBe("https://drive.google.com/file/d/abc/view");
+    expect(result.fileKey).toBe("FY25-26/Invoices-Received/test.pdf");
     expect(result.extracted).toMatchObject({
       vendor: "Test Vendor",
       amount_inr: 2000,
@@ -287,7 +290,7 @@ describe("runUploadPipeline", () => {
     expect(result.matchedRow).toBe(10);
     expect(updateFiraColumns).toHaveBeenCalledWith(
       10,
-      "https://drive.google.com/file/d/abc/view",
+      "FY25-26/Invoices-Received/test.pdf",
       "TXN20260315001",
       mockEnv,
     );

@@ -13,13 +13,13 @@ export interface JwtPayload {
 
 export interface Env {
   FINANCE_KV: KVNamespace;
+  FINANCE_R2: R2Bucket;
   JWT_SECRET: string;
   ADMIN_PASSWORD_HASH: string;
   CA_PASSWORD_HASH: string;
   ANTHROPIC_API_KEY: string;
   GOOGLE_SERVICE_ACCOUNT_EMAIL: string;
   GOOGLE_PRIVATE_KEY: string;
-  GOOGLE_DRIVE_ROOT_FOLDER_ID: string;
   GOOGLE_SHEET_ID: string;
 }
 
@@ -94,7 +94,7 @@ export type ErrorCode =
   | "UNAUTHORIZED"
   | "FORBIDDEN"
   | "OCR_FAILED"
-  | "DRIVE_ERROR"
+  | "STORAGE_ERROR"
   | "SHEET_ERROR"
   | "NOT_FOUND"
   | "VALIDATION_ERROR";

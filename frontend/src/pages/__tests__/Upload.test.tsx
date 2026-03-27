@@ -75,7 +75,7 @@ describe("Upload page", () => {
           date: "2026-03-26",
           category: "other",
         },
-        driveUrl: "https://drive.google.com/file/d/abc/view",
+        fileKey: "FY25-26/Expenses/2026-03/other_20260326_test.jpg",
         rowNum: 5,
       },
     });
@@ -96,7 +96,7 @@ describe("Upload page", () => {
     });
 
     expect(screen.getByText("Test Shop")).toBeInTheDocument();
-    expect(screen.getByText("View in Google Drive →")).toBeInTheDocument();
+    expect(screen.getByText(/Saved as:/)).toBeInTheDocument();
   });
 
   it("shows error message on upload failure", async () => {
@@ -125,7 +125,7 @@ describe("Upload page", () => {
         status: "confirmed",
         uploadType: "expense",
         extracted: { vendor: "Shop", amount_inr: 100 },
-        driveUrl: "https://drive.google.com/file/d/xyz/view",
+        fileKey: "FY25-26/Expenses/other.pdf",
         rowNum: 3,
       },
     });

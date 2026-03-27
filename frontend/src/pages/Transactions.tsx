@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTransactions } from "../hooks/useTransactions";
 import { ReviewBadge } from "../components/ReviewBadge";
 import { Spinner } from "../components/Spinner";
+import { FilePreview } from "../components/FilePreview";
 import { getStoredRole } from "../api/client";
 import { useFY } from "../context/FYContext";
 
@@ -106,6 +107,7 @@ export function Transactions() {
     id: string;
     values: Record<string, string>;
   } | null>(null);
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
   const fields = tab === "Income" ? INCOME_FIELDS : EXPENSE_FIELDS;
   const allFields =
     tab === "Income"
@@ -118,7 +120,7 @@ export function Transactions() {
           "skydo_prn",
           "fira_drive_url",
           "fira_ref",
-          "drive_url",
+          "file_key",
           "confidence",
           "added_at",
         ]
@@ -131,7 +133,7 @@ export function Transactions() {
           "claimable_inr",
           "paid_via",
           "vendor",
-          "drive_url",
+          "file_key",
           "confidence",
           "added_at",
         ];
@@ -144,7 +146,6 @@ export function Transactions() {
         <h1 className="label-uppercase">Transactions</h1>
       </div>
 
-      {/* Tab selector */}
       <div className="bg-surface-muted mb-5 flex gap-1 rounded-lg p-1">
         {(["Income", "Expenses"] as const).map((t) => (
           <button
@@ -190,11 +191,9 @@ export function Transactions() {
                         {f.replace(/_/g, " ")}
                       </th>
                     ))}
-                    {isOwner && (
-                      <th className="border-border text-text-secondary border-b px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wide">
-                        Actions
-                      </th>
-                    )}
+                    <th className="border-border text-text-secondary border-b px-4 py-2 text-right text-[11px] font-medium uppercase tracking-wide">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -211,24 +210,79 @@ export function Transactions() {
                           )}
                         </td>
                       ))}
-                      {isOwner && (
-                        <td className="px-4 py-2.5 text-right">
-                          <button
-                            onClick={() => setEditingRow({ id: row.id, values: row.values })}
-                            className="text-accent-blue mr-2 text-xs hover:underline"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm("Delete this transaction?")) void remove(row.id);
-                            }}
-                            className="text-accent-red text-xs hover:underline"
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      )}
+                      <td className="px-4 py-2.5 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          {row.values.file_key && (
+                            <button
+                              onClick={() => setPreviewKey(row.values.file_key!)}
+                              className="text-text-secondary hover:bg-accent-blue/10 hover:text-accent-blue rounded-md p-1.5 transition-colors"
+                              title="View file"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                width="15"
+                                height="15"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                <circle cx="12" cy="12" r="3" />
+                              </svg>
+                            </button>
+                          )}
+                          {isOwner && (
+                            <>
+                              <button
+                                onClick={() => setEditingRow({ id: row.id, values: row.values })}
+                                className="text-text-secondary hover:bg-accent-blue/10 hover:text-accent-blue rounded-md p-1.5 transition-colors"
+                                title="Edit"
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width="15"
+                                  height="15"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                                  <path d="m15 5 4 4" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (confirm("Delete this transaction?")) void remove(row.id);
+                                }}
+                                className="text-text-secondary hover:bg-accent-red/10 hover:text-accent-red rounded-md p-1.5 transition-colors"
+                                title="Delete"
+                              >
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width="15"
+                                  height="15"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M3 6h18" />
+                                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                                </svg>
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -249,6 +303,8 @@ export function Transactions() {
           onClose={() => setEditingRow(null)}
         />
       )}
+
+      {previewKey && <FilePreview fileKey={previewKey} onClose={() => setPreviewKey(null)} />}
     </div>
   );
 }

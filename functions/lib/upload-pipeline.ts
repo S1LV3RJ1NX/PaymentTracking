@@ -1,6 +1,6 @@
 import type { UploadType, Env, OcrResult } from "./types";
 import { extractDocument } from "./ocr";
-import { uploadToDrive } from "./drive";
+import { uploadToR2 } from "./storage";
 import { appendRow, findRowByNetInr, updateFiraColumns } from "./sheets";
 
 export interface UploadInput {
@@ -15,7 +15,7 @@ export interface UploadOutput {
   status: "confirmed" | "review";
   uploadType: UploadType;
   extracted: Record<string, unknown>;
-  driveUrl: string;
+  fileKey: string;
   [key: string]: unknown;
 }
 
@@ -31,7 +31,7 @@ export async function runUploadPipeline(input: UploadInput, env: Env): Promise<U
     ocrResult.data.description = input.customDescription;
   }
 
-  const driveUrl = await uploadToDrive(
+  const fileKey = await uploadToR2(
     input.fileBuffer,
     input.mimeType,
     input.fileName,
@@ -44,13 +44,13 @@ export async function runUploadPipeline(input: UploadInput, env: Env): Promise<U
   const status = confidence === "high" ? "confirmed" : "review";
 
   const now = new Date().toISOString();
-  const sheetResult = await writeToSheets(input.uploadType, ocrResult, driveUrl, now, env);
+  const sheetResult = await writeToSheets(input.uploadType, ocrResult, fileKey, now, env);
 
   return {
     status,
     uploadType: input.uploadType,
     extracted: ocrResult.data as Record<string, unknown>,
-    driveUrl,
+    fileKey,
     ...sheetResult,
   };
 }
@@ -58,7 +58,7 @@ export async function runUploadPipeline(input: UploadInput, env: Env): Promise<U
 async function writeToSheets(
   uploadType: UploadType,
   ocrResult: OcrResult,
-  driveUrl: string,
+  fileKey: string,
   now: string,
   env: Env,
 ): Promise<Record<string, unknown>> {
@@ -75,7 +75,7 @@ async function writeToSheets(
         d.skydo_prn,
         "",
         "",
-        driveUrl,
+        fileKey,
         d.confidence,
         now,
       ];
@@ -90,7 +90,7 @@ async function writeToSheets(
         String(d.skydo_charges_inr),
         "bank",
         "Skydo",
-        driveUrl,
+        fileKey,
         "high",
         now,
       ];
@@ -105,7 +105,7 @@ async function writeToSheets(
 
       const match = await findRowByNetInr("Income", d.inr_amount, env);
       if (match) {
-        await updateFiraColumns(match.rowNum, driveUrl, d.transaction_ref, env);
+        await updateFiraColumns(match.rowNum, fileKey, d.transaction_ref, env);
         return { linked: true, matchedRow: match.rowNum };
       }
 
@@ -125,7 +125,7 @@ async function writeToSheets(
         String(claimable),
         d.payment_method ?? "",
         d.vendor ?? "",
-        driveUrl,
+        fileKey,
         d.confidence,
         now,
       ];
@@ -144,7 +144,7 @@ async function writeToSheets(
         String(d["amount"] ?? ""),
         "",
         String(d["vendor_or_client"] ?? ""),
-        driveUrl,
+        fileKey,
         "low",
         now,
       ];

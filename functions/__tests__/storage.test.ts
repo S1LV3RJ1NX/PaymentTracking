@@ -1,28 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { buildFilename, uploadToDrive } from "../lib/drive";
+import { buildFilename, buildR2Key, uploadToR2, deleteFromR2, getFromR2 } from "../lib/storage";
 import type { OcrResult, Env } from "../lib/types";
 
-vi.mock("../lib/google-auth", () => ({
-  getAccessToken: vi.fn().mockResolvedValue("mock-access-token"),
-}));
+const mockR2Put = vi.fn().mockResolvedValue(undefined);
+const mockR2Delete = vi.fn().mockResolvedValue(undefined);
+const mockR2Get = vi.fn().mockResolvedValue(null);
 
-const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
-
-const mockKv = {
-  get: vi.fn().mockResolvedValue(null),
-  put: vi.fn().mockResolvedValue(undefined),
-} as unknown as KVNamespace;
+const mockR2 = {
+  put: mockR2Put,
+  delete: mockR2Delete,
+  get: mockR2Get,
+} as unknown as R2Bucket;
 
 const mockEnv: Env = {
-  FINANCE_KV: mockKv,
+  FINANCE_KV: {} as KVNamespace,
+  FINANCE_R2: mockR2,
   JWT_SECRET: "test-secret",
   ADMIN_PASSWORD_HASH: "hash",
   CA_PASSWORD_HASH: "hash",
   ANTHROPIC_API_KEY: "key",
   GOOGLE_SERVICE_ACCOUNT_EMAIL: "test@test.iam.gserviceaccount.com",
   GOOGLE_PRIVATE_KEY: "fake-key",
-  GOOGLE_DRIVE_ROOT_FOLDER_ID: "root-folder-id",
   GOOGLE_SHEET_ID: "sheet-123",
 };
 
@@ -105,41 +103,53 @@ describe("buildFilename", () => {
   });
 });
 
-describe("uploadToDrive", () => {
-  it("creates folder chain and uploads file", async () => {
-    // Folder lookups: FY25-26, Invoices-Received — both not found, so create
-    let callCount = 0;
-    mockFetch.mockImplementation(async (url: string, options?: RequestInit) => {
-      const urlStr = String(url);
+describe("buildR2Key", () => {
+  it("builds a full R2 key with FY/subfolder/filename", () => {
+    const result: OcrResult = {
+      type: "skydo_invoice",
+      data: {
+        payer: "Test Co",
+        date: "2026-03-15",
+        usd_amount: 5000,
+        fx_rate: 84.5,
+        converted_inr: 422500,
+        skydo_charges_inr: 3000,
+        net_inr_received: 419500,
+        invoice_number: "INV001",
+        skydo_prn: "PRN001",
+        confidence: "high",
+        review_reason: null,
+      },
+    };
 
-      // Folder search (GET with q= parameter)
-      if (urlStr.includes("drive/v3/files?q=")) {
-        return { ok: true, json: async () => ({ files: [] }) };
-      }
+    const key = buildR2Key("skydo_invoice", result, "test.pdf");
+    expect(key).toBe("FY25-26/Invoices-Received/Skydo_Test_Co_2026-03_INV001.pdf");
+  });
 
-      // Folder create (POST without uploadType)
-      if (urlStr === "https://www.googleapis.com/drive/v3/files" && options?.method === "POST") {
-        callCount++;
-        return {
-          ok: true,
-          json: async () => ({ id: `folder-${callCount}` }),
-        };
-      }
+  it("builds expense key with month subfolder", () => {
+    const result: OcrResult = {
+      type: "expense",
+      data: {
+        vendor: "ISP",
+        amount_inr: 1000,
+        date: "2025-07-15",
+        upi_transaction_id: null,
+        category: "internet",
+        payment_method: "upi",
+        description: "Net bill",
+        business_pct: 100,
+        confidence: "high",
+        review_reason: null,
+      },
+    };
 
-      // File upload (POST with uploadType=multipart)
-      if (urlStr.includes("uploadType=multipart")) {
-        return {
-          ok: true,
-          json: async () => ({
-            id: "file-id-123",
-            webViewLink: "https://drive.google.com/file/d/file-id-123/view",
-          }),
-        };
-      }
+    const key = buildR2Key("expense", result, "bill.jpg");
+    expect(key).toBe("FY25-26/Expenses/2025-07/internet_20250715_bill.jpg");
+  });
+});
 
-      return { ok: false, status: 404, text: async () => "Not found" };
-    });
-
+describe("uploadToR2", () => {
+  it("puts the file into R2 and returns the key", async () => {
     const ocrResult: OcrResult = {
       type: "skydo_invoice",
       data: {
@@ -157,8 +167,9 @@ describe("uploadToDrive", () => {
       },
     };
 
-    const url = await uploadToDrive(
-      new ArrayBuffer(8),
+    const buf = new ArrayBuffer(8);
+    const key = await uploadToR2(
+      buf,
       "application/pdf",
       "test.pdf",
       "skydo_invoice",
@@ -166,57 +177,32 @@ describe("uploadToDrive", () => {
       mockEnv,
     );
 
-    expect(url).toBe("https://drive.google.com/file/d/file-id-123/view");
-    // Should have KV puts for new folders
-    expect(mockKv.put).toHaveBeenCalled();
+    expect(key).toBe("FY25-26/Invoices-Received/Skydo_Test_Co_2026-03_INV001.pdf");
+    expect(mockR2Put).toHaveBeenCalledWith(key, buf, {
+      httpMetadata: { contentType: "application/pdf" },
+      customMetadata: { uploadType: "skydo_invoice", originalName: "test.pdf" },
+    });
+  });
+});
+
+describe("deleteFromR2", () => {
+  it("calls R2 delete with the key", async () => {
+    await deleteFromR2("FY25-26/Invoices/test.pdf", mockEnv);
+    expect(mockR2Delete).toHaveBeenCalledWith("FY25-26/Invoices/test.pdf");
+  });
+});
+
+describe("getFromR2", () => {
+  it("returns null for missing file", async () => {
+    const result = await getFromR2("no-such-key", mockEnv);
+    expect(result).toBeNull();
   });
 
-  it("uses cached folder ID from KV", async () => {
-    (mockKv.get as ReturnType<typeof vi.fn>).mockResolvedValue("cached-folder-id");
+  it("returns the object when found", async () => {
+    const fakeBody = { body: "blob", httpMetadata: { contentType: "image/jpeg" } };
+    mockR2Get.mockResolvedValueOnce(fakeBody);
 
-    mockFetch.mockImplementation(async (url: string) => {
-      const urlStr = String(url);
-      if (urlStr.includes("uploadType=multipart")) {
-        return {
-          ok: true,
-          json: async () => ({
-            id: "file-id",
-            webViewLink: "https://drive.google.com/file/d/file-id/view",
-          }),
-        };
-      }
-      return { ok: true, json: async () => ({}) };
-    });
-
-    const ocrResult: OcrResult = {
-      type: "expense",
-      data: {
-        vendor: "Shop",
-        amount_inr: 500,
-        date: "2026-03-26",
-        upi_transaction_id: null,
-        category: "other",
-        payment_method: "upi",
-        description: "test",
-        business_pct: 100,
-        confidence: "high",
-        review_reason: null,
-      },
-    };
-
-    await uploadToDrive(
-      new ArrayBuffer(8),
-      "image/jpeg",
-      "test.jpg",
-      "expense",
-      ocrResult,
-      mockEnv,
-    );
-
-    // No folder search/create calls since KV returned cached IDs
-    const driveCalls = mockFetch.mock.calls.filter((c) =>
-      String(c[0]).includes("drive/v3/files?q="),
-    );
-    expect(driveCalls).toHaveLength(0);
+    const result = await getFromR2("FY25-26/Expenses/file.jpg", mockEnv);
+    expect(result).toBe(fakeBody);
   });
 });

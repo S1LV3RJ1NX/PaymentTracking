@@ -24,17 +24,17 @@ vi.mock("../lib/sheets", () => ({
 }));
 
 vi.mock("../lib/ocr", () => ({ extractDocument: vi.fn() }));
-vi.mock("../lib/drive", () => ({ uploadToDrive: vi.fn() }));
+vi.mock("../lib/storage", () => ({ uploadToR2: vi.fn() }));
 
 const TEST_ENV = {
   JWT_SECRET: "test-secret-that-is-at-least-32-characters-long",
   ADMIN_PASSWORD_HASH: "",
   CA_PASSWORD_HASH: "",
   FINANCE_KV: {} as KVNamespace,
+  FINANCE_R2: {} as R2Bucket,
   ANTHROPIC_API_KEY: "sk-ant-test",
   GOOGLE_SERVICE_ACCOUNT_EMAIL: "test@test.iam.gserviceaccount.com",
   GOOGLE_PRIVATE_KEY: "fake-key",
-  GOOGLE_DRIVE_ROOT_FOLDER_ID: "fake-folder-id",
   GOOGLE_SHEET_ID: "fake-sheet-id",
 };
 

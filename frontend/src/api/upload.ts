@@ -7,7 +7,7 @@ export interface UploadResponse {
     status: "confirmed" | "review";
     uploadType: UploadType;
     extracted: Record<string, unknown>;
-    driveUrl: string;
+    fileKey: string;
     incomeRowNum?: number;
     feeRowNum?: number;
     rowNum?: number;

@@ -5,6 +5,10 @@ compatibility_date = "2025-07-18"
 binding = "FINANCE_KV"
 id = "your-kv-namespace-id"
 
+[[r2_buckets]]
+binding = "FINANCE_R2"
+bucket_name = "finance-tracker-docs"
+
 [build]
 command = "cd frontend && npm run build"
 watch_dir = ["frontend/src", "functions"]

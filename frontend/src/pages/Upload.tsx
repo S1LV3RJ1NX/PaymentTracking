@@ -43,15 +43,10 @@ function ResultCard({ data }: { data: NonNullable<ReturnType<typeof useUpload>["
         ))}
       </div>
 
-      {data.driveUrl && (
-        <a
-          href={data.driveUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-accent-blue mt-3 block text-center text-xs hover:underline"
-        >
-          View in Google Drive →
-        </a>
+      {data.fileKey && (
+        <p className="text-text-tertiary mt-3 text-center text-xs">
+          Saved as: {data.fileKey.split("/").pop()}
+        </p>
       )}
 
       {"linked" in data && (

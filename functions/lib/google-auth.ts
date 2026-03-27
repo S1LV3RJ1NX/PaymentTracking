@@ -15,7 +15,7 @@ export async function getAccessToken(env: Env): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const payload = {
     iss: env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    scope: "https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets",
+    scope: "https://www.googleapis.com/auth/spreadsheets",
     aud: "https://oauth2.googleapis.com/token",
     iat: now,
     exp: now + 3600,

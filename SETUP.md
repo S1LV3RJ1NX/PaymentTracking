@@ -6,14 +6,14 @@ You want to upload a Skydo invoice from your phone, see it parsed automatically,
 
 ## What you'll set up
 
-| Service                | Why                                                            | Free?                      |
-| ---------------------- | -------------------------------------------------------------- | -------------------------- |
-| Google Cloud project   | Drive + Sheets API access                                      | Yes (within quota)         |
-| Google Service Account | Server-to-server auth, no OAuth popups                         | Yes                        |
-| Google Sheet           | Your live ledger with Income + Expenses tabs                   | Yes                        |
-| Google Drive folder    | Organized file storage by FY and type                          | Yes                        |
-| Anthropic API key      | Claude Haiku OCR for invoices/receipts                         | Pay-per-use (~$0.001/page) |
-| Cloudflare KV          | Folder ID cache + secrets store (local only needs `--kv` flag) | Yes                        |
+| Service                | Why                                                  | Free?                      |
+| ---------------------- | ---------------------------------------------------- | -------------------------- |
+| Google Cloud project   | Sheets API access                                    | Yes (within quota)         |
+| Google Service Account | Server-to-server auth, no OAuth popups               | Yes                        |
+| Google Sheet           | Your live ledger with Income + Expenses tabs         | Yes                        |
+| Cloudflare R2          | S3-compatible file storage for uploaded documents    | Yes (10 GB free)           |
+| Anthropic API key      | Claude Haiku OCR for invoices/receipts               | Pay-per-use (~$0.001/page) |
+| Cloudflare KV          | Tax estimates + cache (local only needs `--kv` flag) | Yes                        |
 
 ---
 
@@ -91,8 +91,9 @@ ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
 Still in the Google Cloud Console:
 
 1. Go to **APIs & Services → Library**
-2. Search for **Google Drive API** → click → **Enable**
-3. Search for **Google Sheets API** → click → **Enable**
+2. Search for **Google Sheets API** → click → **Enable**
+
+(Google Drive API is no longer needed — we use Cloudflare R2 for file storage.)
 
 ### 3c. Create a Service Account
 
@@ -135,15 +136,15 @@ Add both to `.dev.vars`.
 
 ### Income tab — Row 1 (headers):
 
-| A    | B      | C              | D          | E          | F         | G              | H        | I         | J          | K        |
-| ---- | ------ | -------------- | ---------- | ---------- | --------- | -------------- | -------- | --------- | ---------- | -------- |
-| date | client | invoice_number | usd_amount | inr_amount | skydo_prn | fira_drive_url | fira_ref | drive_url | confidence | added_at |
+| A    | B      | C              | D          | E          | F         | G              | H        | I        | J          | K        |
+| ---- | ------ | -------------- | ---------- | ---------- | --------- | -------------- | -------- | -------- | ---------- | -------- |
+| date | client | invoice_number | usd_amount | inr_amount | skydo_prn | fira_drive_url | fira_ref | file_key | confidence | added_at |
 
 ### Expenses tab — Row 1 (headers):
 
-| A    | B           | C        | D          | E            | F             | G        | H      | I         | J          | K        |
-| ---- | ----------- | -------- | ---------- | ------------ | ------------- | -------- | ------ | --------- | ---------- | -------- |
-| date | description | category | amount_inr | business_pct | claimable_inr | paid_via | vendor | drive_url | confidence | added_at |
+| A    | B           | C        | D          | E            | F             | G        | H      | I        | J          | K        |
+| ---- | ----------- | -------- | ---------- | ------------ | ------------- | -------- | ------ | -------- | ---------- | -------- |
+| date | description | category | amount_inr | business_pct | claimable_inr | paid_via | vendor | file_key | confidence | added_at |
 
 4. **Share with the service account:** Click **Share** → paste the `GOOGLE_SERVICE_ACCOUNT_EMAIL` → set to **Editor** → uncheck "Notify people" → **Share**
 
@@ -161,22 +162,20 @@ GOOGLE_SHEET_ID=<your sheet ID>
 
 ---
 
-## Step 5: Create the Google Drive root folder
+## Step 5: Cloudflare R2 setup
 
-1. Go to [drive.google.com](https://drive.google.com)
-2. Create a new folder (e.g. `FinanceTracker`)
-3. Right-click the folder → **Share** → paste the same `GOOGLE_SERVICE_ACCOUNT_EMAIL` → **Editor** → **Share**
-4. Open the folder. Copy the folder ID from the URL:
+R2 is Cloudflare's S3-compatible object storage. Uploaded documents (invoices, FIRA, expenses) are stored here instead of Google Drive. **Free tier: 10 GB storage, 1M writes, 10M reads per month.**
 
-```
-https://drive.google.com/drive/folders/THIS_IS_YOUR_FOLDER_ID
-```
+### For local development
 
-Add to `.dev.vars`:
+No setup needed. Wrangler automatically creates a **local R2 emulator** when you use the `--r2` flag (same as it does for KV). Files are stored in `.wrangler/state/` on disk.
 
-```
-GOOGLE_DRIVE_ROOT_FOLDER_ID=<your folder ID>
-```
+### For production (when deploying)
+
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com) → **R2 Object Storage** → **Create bucket**
+2. Name: `finance-tracker-docs`
+3. Leave defaults → **Create bucket**
+4. The bucket name in `wrangler.toml` is already set to `finance-tracker-docs`
 
 ---
 
@@ -191,9 +190,10 @@ CA_PASSWORD_HASH=$2a$10$yM7pQ...
 ANTHROPIC_API_KEY=sk-ant-api03-...
 GOOGLE_SERVICE_ACCOUNT_EMAIL=finance-tracker-sa@your-project.iam.gserviceaccount.com
 GOOGLE_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----\n"
-GOOGLE_DRIVE_ROOT_FOLDER_ID=1aBcD...
 GOOGLE_SHEET_ID=1xYz...
 ```
+
+Note: `GOOGLE_DRIVE_ROOT_FOLDER_ID` is no longer needed — files are stored in Cloudflare R2.
 
 ---
 
@@ -202,14 +202,19 @@ GOOGLE_SHEET_ID=1xYz...
 ```bash
 npx wrangler pages dev frontend/dist \
   --compatibility-date=2025-07-18 \
-  --kv FINANCE_KV
+  --kv FINANCE_KV \
+  --r2 FINANCE_R2 \
+  --ip 0.0.0.0 \
+  --port 8788
 ```
 
-Open [http://localhost:8788](http://localhost:8788). Wrangler serves the frontend and API together, reads `.dev.vars` automatically, and simulates KV locally.
+Open [http://localhost:8788](http://localhost:8788). Wrangler serves the frontend and API together, reads `.dev.vars` automatically, and simulates KV and R2 locally.
 
 When you edit frontend or backend files, wrangler detects the change and auto-rebuilds (~2-3 seconds).
 
 > **Optional — faster frontend iteration:** If you want instant hot reload (<100ms) for UI changes, run `cd frontend && npm run dev` in a second terminal and open `http://localhost:5173` instead. Vite proxies API calls to wrangler on port 8788 automatically.
+
+> **Mobile testing:** Add `--ip 0.0.0.0` to the wrangler command to make it accessible on your local network. Then open `http://<your-lan-ip>:8788` on your phone.
 
 ---
 
@@ -219,18 +224,19 @@ When you edit frontend or backend files, wrangler detects the change and auto-re
 2. **Upload** — go to Upload, select "Skydo Invoice", pick a PDF from `sample-data/`
 3. **Check results** — the OCR result and confidence badge should appear
 4. **Check Google Sheet** — a new row should appear in the Income tab
-5. **Check Google Drive** — a file should appear in `FinanceTracker/FY25-26/Invoices-Received/`
+5. **View file** — click "View" on any transaction to see the uploaded document inline
 
 ---
 
 ## Cleaning up test data
 
-Everything you upload during testing goes into your real Google Sheet and Drive. To clean up:
+Everything you upload during testing goes into your Google Sheet and local R2 storage. To clean up:
 
 - **Sheet:** Delete the test rows from the Income and Expenses tabs
-- **Drive:** Delete the FY folder (e.g. `FY25-26/`) from the root folder. Folder IDs are cached in KV, but the next upload will recreate them automatically.
+- **R2 (local):** Delete the `.wrangler/state/` directory, or just delete individual files via the app's Delete button
+- **R2 (production):** Use the Cloudflare Dashboard → R2 → browse and delete objects
 
-You can also create a completely separate "test" Sheet and Drive folder and use those IDs in `.dev.vars` during development. Switch to your real ones when you're ready.
+You can also create a completely separate "test" Sheet and use that ID in `.dev.vars` during development. Switch to your real one when you're ready.
 
 ---
 
@@ -243,9 +249,11 @@ When ready to deploy:
 3. Set build command: `cd frontend && npm run build`
 4. Set build output directory: `frontend/dist`
 5. Create a KV namespace in **Workers & Pages → KV** — copy the namespace ID
-6. Update `wrangler.toml` with the real KV namespace ID
-7. In Pages project **Settings → Environment variables**, add all the same variables from `.dev.vars`
-8. Deploy
+6. Create an R2 bucket named `finance-tracker-docs` in **R2 Object Storage**
+7. Update `wrangler.toml` with the real KV namespace ID
+8. In Pages project **Settings → Environment variables**, add all the same variables from `.dev.vars`
+9. In Pages project **Settings → Bindings**, bind KV (`FINANCE_KV`) and R2 (`FINANCE_R2`)
+10. Deploy
 
 ---
 
@@ -255,7 +263,7 @@ When ready to deploy:
 | ----------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------- |
 | `Google OAuth token exchange failed: 401` | Wrong private key or email            | Re-download the JSON key, copy values again carefully                           |
 | `Sheets append failed: 403`               | Sheet not shared with service account | Share sheet with the service account email as Editor                            |
-| `Drive upload failed: 404`                | Wrong folder ID, or folder not shared | Verify the folder ID from the URL, share with service account                   |
+| `R2 upload failed`                        | Missing `--r2 FINANCE_R2` flag        | Add `--r2 FINANCE_R2` to your wrangler dev command                              |
 | `Invalid credentials` on login            | Wrong password or hash mismatch       | Re-generate the bcrypt hash, make sure you hash the same password you're typing |
 | `GOOGLE_PRIVATE_KEY` parsing error        | Missing quotes or mangled `\n`        | Wrap the entire key in double quotes in `.dev.vars`, keep all `\n` sequences    |
 | Wrangler can't find `.dev.vars`           | File is in wrong directory            | Must be in the project root (same level as `package.json`)                      |
