@@ -3,7 +3,7 @@ compatibility_date = "2025-07-18"
 
 [[kv_namespaces]]
 binding = "FINANCE_KV"
-id = "your-kv-namespace-id"
+id = "c49ad8b111f94163bee7ae0bca58c9a0"
 
 [[r2_buckets]]
 binding = "FINANCE_R2"
