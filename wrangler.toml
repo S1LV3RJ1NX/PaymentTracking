@@ -1,0 +1,10 @@
+name = "finance-tracker"
+compatibility_date = "2025-07-18"
+
+[[kv_namespaces]]
+binding = "FINANCE_KV"
+id = "your-kv-namespace-id"
+
+[build]
+command = "cd frontend && npm run build"
+watch_dir = ["frontend/src", "functions"]

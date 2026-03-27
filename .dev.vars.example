@@ -1,0 +1,20 @@
+# Copy this file to .dev.vars and fill in real values
+# wrangler pages dev reads .dev.vars automatically
+
+JWT_SECRET=replace-with-a-random-32-char-string
+
+# Generated via: node -e "require('bcryptjs').hash('your-password',10).then(console.log)"
+ADMIN_PASSWORD_HASH=$2a$10$REPLACE_ME
+CA_PASSWORD_HASH=$2a$10$REPLACE_ME
+
+ANTHROPIC_API_KEY=sk-ant-api03-REPLACE_ME
+
+# Google Service Account credentials (from JSON key file)
+GOOGLE_SERVICE_ACCOUNT_EMAIL=your-sa@your-project.iam.gserviceaccount.com
+GOOGLE_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\nREPLACE_ME\n-----END RSA PRIVATE KEY-----"
+
+# Google Drive root folder ID (from the URL when viewing the folder)
+GOOGLE_DRIVE_ROOT_FOLDER_ID=REPLACE_ME
+
+# Google Sheet ID (from the URL: docs.google.com/spreadsheets/d/<THIS_PART>/edit)
+GOOGLE_SHEET_ID=REPLACE_ME

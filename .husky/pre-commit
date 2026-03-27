@@ -1,0 +1,4 @@
+npx lint-staged
+npm run typecheck
+cd functions && npx vitest run && cd ..
+cd frontend && npx vitest run && cd ..
