@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { DropZone } from "../components/DropZone";
 import { useUpload } from "../hooks/useUpload";
+import { ComboInput } from "../components/ComboInput";
+import { EXPENSE_CATEGORIES } from "../lib/constants";
 import type { UploadType } from "../api/types";
 
 const UPLOAD_TYPES: { value: UploadType; label: string; hint: string }[] = [
@@ -9,17 +11,6 @@ const UPLOAD_TYPES: { value: UploadType; label: string; hint: string }[] = [
   { value: "expense", label: "Expense", hint: "Bill, UPI screenshot, receipt" },
   { value: "other", label: "Other", hint: "Any other financial document" },
 ];
-
-const EXPENSE_CATEGORIES = [
-  "rent",
-  "internet",
-  "electricity",
-  "travel",
-  "equipment",
-  "skydo_fees",
-  "professional_fees",
-  "other",
-] as const;
 
 const PAYMENT_METHODS = ["upi", "card", "bank", "other"] as const;
 
@@ -117,12 +108,14 @@ function ExpenseReviewForm({
         onChange={(v) => onUpdateField("vendor", v)}
         disabled={disabled}
       />
-      <SelectInput
+      <ComboInput
         label="Category"
+        id="upload-category"
         value={String(fields["category"] ?? "other")}
-        options={EXPENSE_CATEGORIES}
+        options={[...EXPENSE_CATEGORIES]}
         onChange={(v) => onUpdateField("category", v)}
         disabled={disabled}
+        normalize
       />
       <FieldInput
         label="Description"

@@ -10,6 +10,7 @@ vi.mock("../../api/dashboard", () => ({
     income: { ytd_inr: 672000, by_client: { "Client A": 419000, "Client B": 253000 } },
     expenses: { ytd_claimable: 7000, by_category: { internet: 2000, travel: 5000 } },
     non_business_expenses: 3000,
+    non_business_by_category: { food: 3000 },
     review_count: 3,
   }),
   getMonthlyBreakdown: vi.fn().mockResolvedValue({

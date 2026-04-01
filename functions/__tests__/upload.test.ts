@@ -305,7 +305,7 @@ describe("confirmAndWriteToSheets", () => {
 
     const feeCall = vi.mocked(appendRow).mock.calls[1]!;
     expect(feeCall[0]).toBe("Expenses");
-    expect(feeCall[1]).toContain("skydo_fees");
+    expect(feeCall[1]).toContain("currency_fees");
   });
 
   it("links FIRA to existing Income row", async () => {

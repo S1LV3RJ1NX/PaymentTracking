@@ -4,6 +4,9 @@ import { ReviewBadge } from "../components/ReviewBadge";
 import { Spinner } from "../components/Spinner";
 import { FilePreview } from "../components/FilePreview";
 import { Tooltip } from "../components/Tooltip";
+import { CategoryPill } from "../components/CategoryPill";
+import { ComboInput } from "../components/ComboInput";
+import { EXPENSE_CATEGORIES } from "../lib/constants";
 import { getStoredRole } from "../api/client";
 import { downloadFiles } from "../api/transactions";
 import { useFY } from "../context/FYContext";
@@ -64,11 +67,12 @@ function formatINR(val: string): string {
 interface EditModalProps {
   row: { id: string; values: Record<string, string> };
   fields: string[];
+  categoryOptions?: string[];
   onSave: (id: string, values: string[]) => void;
   onClose: () => void;
 }
 
-function EditModal({ row, fields, onSave, onClose }: EditModalProps) {
+function EditModal({ row, fields, categoryOptions, onSave, onClose }: EditModalProps) {
   const allFields = row.values;
   const [edited, setEdited] = useState<Record<string, string>>({ ...allFields });
 
@@ -92,15 +96,28 @@ function EditModal({ row, fields, onSave, onClose }: EditModalProps) {
         <div className="max-h-[60vh] space-y-3 overflow-y-auto">
           {fields.map((field) => (
             <div key={field}>
-              <label className="text-text-secondary mb-1 block text-[11px] font-medium uppercase tracking-wide">
-                {field.replace(/_/g, " ")}
-              </label>
-              <input
-                type="text"
-                value={edited[field] ?? ""}
-                onChange={(e) => setEdited((s) => ({ ...s, [field]: e.target.value }))}
-                className="border-thin border-border bg-surface text-text focus:ring-accent-blue/30 w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
-              />
+              {field === "category" && categoryOptions ? (
+                <ComboInput
+                  label={field.replace(/_/g, " ")}
+                  id="edit-category"
+                  value={edited[field] ?? ""}
+                  options={categoryOptions}
+                  onChange={(v) => setEdited((s) => ({ ...s, [field]: v }))}
+                  normalize
+                />
+              ) : (
+                <>
+                  <label className="text-text-secondary mb-1 block text-[11px] font-medium uppercase tracking-wide">
+                    {field.replace(/_/g, " ")}
+                  </label>
+                  <input
+                    type="text"
+                    value={edited[field] ?? ""}
+                    onChange={(e) => setEdited((s) => ({ ...s, [field]: e.target.value }))}
+                    className="border-thin border-border bg-surface text-text focus:ring-accent-blue/30 w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                  />
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -342,6 +359,16 @@ export function Transactions() {
           "total_paid",
         ];
 
+  const categoryOptions =
+    tab === "Expenses"
+      ? [
+          ...new Set([
+            ...EXPENSE_CATEGORIES,
+            ...rows.map((r) => r.values.category).filter((c): c is string => !!c),
+          ]),
+        ]
+      : undefined;
+
   const sortedMonths = Object.keys(months).sort().reverse();
 
   const allRowIds = rows.map((r) => r.id);
@@ -513,6 +540,8 @@ export function Transactions() {
                             <ReviewBadge confidence={row.values[f] ?? "high"} />
                           ) : f === "payment_status" ? (
                             <PaymentStatusPill status={row.values[f] ?? ""} />
+                          ) : f === "category" && row.values[f] ? (
+                            <CategoryPill category={row.values[f]} />
                           ) : f === "inr_amount" || f === "amount_inr" ? (
                             formatINR(row.values[f] ?? "0")
                           ) : (
@@ -747,6 +776,7 @@ export function Transactions() {
         <EditModal
           row={editingRow}
           fields={allFields}
+          categoryOptions={categoryOptions}
           onSave={(id, values) => void update(id, values)}
           onClose={() => setEditingRow(null)}
         />

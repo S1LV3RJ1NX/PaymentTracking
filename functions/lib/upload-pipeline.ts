@@ -110,7 +110,7 @@ async function writeToSheets(
       const feeRow = [
         String(f["date"] ?? ""),
         `Skydo fee – ${String(f["payer"] ?? "")}`,
-        "skydo_fees",
+        "currency_fees",
         String(f["skydo_charges_inr"] ?? ""),
         "100",
         String(f["skydo_charges_inr"] ?? ""),

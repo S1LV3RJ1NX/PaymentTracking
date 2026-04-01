@@ -163,7 +163,7 @@ describe("Transactions page", () => {
 
     renderPage();
     await waitFor(() => {
-      expect(screen.getByText("Internet")).toBeInTheDocument();
+      expect(screen.getAllByText("Internet").length).toBeGreaterThan(0);
     });
     expect(screen.queryByLabelText("Edit")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Delete")).not.toBeInTheDocument();

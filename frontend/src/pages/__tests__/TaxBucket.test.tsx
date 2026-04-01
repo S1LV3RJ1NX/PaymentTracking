@@ -69,6 +69,7 @@ describe("TaxBucket page – 44ADA (₹25L, under ₹75L limit)", () => {
       income: { ytd_inr: 800000, by_client: {} },
       expenses: { ytd_claimable: 0, by_category: {} },
       non_business_expenses: 0,
+      non_business_by_category: {},
       review_count: 0,
     });
   });
@@ -150,6 +151,7 @@ describe("TaxBucket page – 44ADA + 87A rebate (₹20L, taxable ₹10L ≤ ₹1
       income: { ytd_inr: 600000, by_client: {} },
       expenses: { ytd_claimable: 0, by_category: {} },
       non_business_expenses: 0,
+      non_business_by_category: {},
       review_count: 0,
     });
   });
@@ -202,6 +204,7 @@ describe("TaxBucket page – Regular (₹1Cr, above ₹75L limit)", () => {
       income: { ytd_inr: 4000000, by_client: {} },
       expenses: { ytd_claimable: 0, by_category: {} },
       non_business_expenses: 0,
+      non_business_by_category: {},
       review_count: 0,
     });
   });

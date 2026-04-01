@@ -848,6 +848,7 @@ app.get("/dashboard/summary", async (c) => {
     let ytdExpenses = 0;
     let nonBusinessExpenses = 0;
     const byCategory: Record<string, number> = {};
+    const nonBusinessByCategory: Record<string, number> = {};
     let expenseReviewCount = 0;
 
     for (let i = 1; i < expenseRows.length; i++) {
@@ -861,7 +862,11 @@ app.get("/dashboard/summary", async (c) => {
       const claimable = parseFloat((row[5] ?? "0").replace(/,/g, ""));
 
       if (bpct === "0") {
-        if (!isNaN(amountInr)) nonBusinessExpenses += amountInr;
+        if (!isNaN(amountInr)) {
+          nonBusinessExpenses += amountInr;
+          const category = row[2] ?? "other";
+          nonBusinessByCategory[category] = (nonBusinessByCategory[category] ?? 0) + amountInr;
+        }
       } else {
         if (!isNaN(claimable)) {
           ytdExpenses += claimable;
@@ -881,6 +886,7 @@ app.get("/dashboard/summary", async (c) => {
         income: { ytd_inr: ytdIncomeInr, by_client: byClient },
         expenses: { ytd_claimable: ytdExpenses, by_category: byCategory },
         non_business_expenses: nonBusinessExpenses,
+        non_business_by_category: nonBusinessByCategory,
         review_count: incomeReviewCount + expenseReviewCount,
       },
     });

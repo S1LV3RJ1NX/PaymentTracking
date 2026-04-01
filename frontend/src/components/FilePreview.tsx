@@ -292,7 +292,7 @@ export function FilePreview({
       onClick={onClose}
     >
       <div
-        className="border-thin border-border bg-surface-card relative flex max-h-[92vh] w-full max-w-2xl flex-col rounded-xl"
+        className="border-thin border-border bg-surface-card relative flex h-[92vh] w-full max-w-2xl flex-col rounded-xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

@@ -5,6 +5,7 @@ export interface DashboardSummary {
   income: { ytd_inr: number; by_client: Record<string, number> };
   expenses: { ytd_claimable: number; by_category: Record<string, number> };
   non_business_expenses: number;
+  non_business_by_category: Record<string, number>;
   review_count: number;
 }
 
