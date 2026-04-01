@@ -6,7 +6,7 @@ import { zipSync } from "fflate";
 import type { Env, Role, UploadType } from "./types";
 import { LoginRequestSchema } from "./types";
 import { verifyJwt, verifyPassword, signJwt } from "./auth";
-import { runUploadPipeline } from "./upload-pipeline";
+import { runExtractPipeline, confirmAndWriteToSheets } from "./upload-pipeline";
 import {
   getRows,
   getRow,
@@ -94,12 +94,11 @@ const VALID_UPLOAD_TYPES = new Set<UploadType>(["skydo_invoice", "fira", "expens
 
 const ALLOWED_MIME_TYPES = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]);
 
-app.post("/upload", ownerOnly, async (c) => {
+app.post("/upload/extract", ownerOnly, async (c) => {
   const formData = await c.req.formData();
   const rawFile = formData.get("file") as unknown;
   const uploadType = formData.get("type") as UploadType | null;
   const customDescription = formData.get("description") as string | null;
-  const rawBusinessPct = formData.get("businessPct") as string | null;
 
   if (!rawFile || typeof rawFile === "string") {
     return c.json({ success: false, error: "No file provided", code: "VALIDATION_ERROR" }, 400);
@@ -129,18 +128,14 @@ app.post("/upload", ownerOnly, async (c) => {
     );
   }
 
-  const businessPct =
-    rawBusinessPct !== null && rawBusinessPct !== "" ? parseInt(rawBusinessPct, 10) : null;
-
   try {
-    const result = await runUploadPipeline(
+    const result = await runExtractPipeline(
       {
         fileBuffer: await file.arrayBuffer(),
         mimeType: file.type,
         fileName: file.name,
         uploadType,
         customDescription,
-        businessPct: isNaN(businessPct ?? NaN) ? null : businessPct,
       },
       c.env,
     );
@@ -148,9 +143,75 @@ app.post("/upload", ownerOnly, async (c) => {
     return c.json({ success: true, data: result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Upload processing failed";
-    console.error("[upload]", msg, err instanceof Error ? err.stack : "");
+    console.error("[upload/extract]", msg, err instanceof Error ? err.stack : "");
     const code = msg.includes("OCR") ? "OCR_FAILED" : "STORAGE_ERROR";
     return c.json({ success: false, error: msg, code }, 500);
+  }
+});
+
+app.post("/upload/confirm", ownerOnly, async (c) => {
+  const body = (await c.req.json()) as {
+    uploadType?: UploadType;
+    fileKey?: string;
+    fields?: Record<string, unknown>;
+    businessPct?: number | null;
+  };
+
+  if (!body.uploadType || !body.fileKey || !body.fields) {
+    return c.json(
+      {
+        success: false,
+        error: "uploadType, fileKey, and fields are required",
+        code: "VALIDATION_ERROR",
+      },
+      400,
+    );
+  }
+
+  if (!VALID_UPLOAD_TYPES.has(body.uploadType)) {
+    return c.json(
+      {
+        success: false,
+        error: "Invalid upload type",
+        code: "VALIDATION_ERROR",
+      },
+      400,
+    );
+  }
+
+  try {
+    const result = await confirmAndWriteToSheets(
+      {
+        uploadType: body.uploadType,
+        fileKey: body.fileKey,
+        fields: body.fields,
+        businessPct: body.businessPct ?? null,
+      },
+      c.env,
+    );
+
+    return c.json({ success: true, data: result });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to save transaction";
+    console.error("[upload/confirm]", msg, err instanceof Error ? err.stack : "");
+    return c.json({ success: false, error: msg, code: "SHEET_ERROR" }, 500);
+  }
+});
+
+app.delete("/upload/cancel", ownerOnly, async (c) => {
+  const body = (await c.req.json()) as { fileKey?: string };
+
+  if (!body.fileKey) {
+    return c.json({ success: false, error: "fileKey is required", code: "VALIDATION_ERROR" }, 400);
+  }
+
+  try {
+    await deleteFromR2(body.fileKey, c.env);
+    return c.json({ success: true, data: { deleted: true } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to cancel upload";
+    console.error("[upload/cancel]", msg);
+    return c.json({ success: false, error: msg, code: "STORAGE_ERROR" }, 500);
   }
 });
 
@@ -571,6 +632,12 @@ app.post("/expenses/:rowNum/payments", ownerOnly, async (c) => {
       now,
     ];
     const paymentRowNum = await appendRow("Payments", paymentRow, c.env);
+
+    const paymentStatus = expRow[11] ?? "unpaid";
+    const paymentDate = ocrData["date"] ? String(ocrData["date"]) : null;
+    if (paymentDate && paymentStatus === "unpaid") {
+      await updateCell("Expenses", rowNum, "A", paymentDate, c.env);
+    }
 
     const { status, totalPaid } = await recalcPaymentStatus(rowNum, c.env);
 

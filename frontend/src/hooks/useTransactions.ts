@@ -20,6 +20,8 @@ export function useTransactions(fy: string) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -73,24 +75,51 @@ export function useTransactions(fy: string) {
 
   const addPayment = useCallback(
     async (rowNum: number, file: File) => {
-      await addExpensePayment(rowNum, await maybeCompressImage(file));
-      await fetchData();
+      setUploading(true);
+      setUploadError(null);
+      try {
+        await addExpensePayment(rowNum, await maybeCompressImage(file));
+        await fetchData();
+      } catch (e) {
+        setUploadError(e instanceof Error ? e.message : "Upload failed");
+        throw e;
+      } finally {
+        setUploading(false);
+      }
     },
     [fetchData],
   );
 
   const swapBill = useCallback(
     async (rowNum: number, file: File) => {
-      await replaceBill(rowNum, await maybeCompressImage(file));
-      await fetchData();
+      setUploading(true);
+      setUploadError(null);
+      try {
+        await replaceBill(rowNum, await maybeCompressImage(file));
+        await fetchData();
+      } catch (e) {
+        setUploadError(e instanceof Error ? e.message : "Upload failed");
+        throw e;
+      } finally {
+        setUploading(false);
+      }
     },
     [fetchData],
   );
 
   const addFira = useCallback(
     async (id: string, file: File) => {
-      await attachFira(id, await maybeCompressImage(file));
-      await fetchData();
+      setUploading(true);
+      setUploadError(null);
+      try {
+        await attachFira(id, await maybeCompressImage(file));
+        await fetchData();
+      } catch (e) {
+        setUploadError(e instanceof Error ? e.message : "Upload failed");
+        throw e;
+      } finally {
+        setUploading(false);
+      }
     },
     [fetchData],
   );
@@ -114,6 +143,8 @@ export function useTransactions(fy: string) {
     addPayment,
     swapBill,
     addFira,
+    uploading,
+    uploadError,
     refetch: fetchData,
   };
 }

@@ -4,7 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { Upload } from "../Upload";
 
 vi.mock("../../api/upload", () => ({
-  uploadFile: vi.fn(),
+  extractFile: vi.fn(),
+  confirmUpload: vi.fn(),
+  cancelUpload: vi.fn(),
 }));
 
 vi.mock("react-dropzone", () => ({
@@ -63,9 +65,9 @@ describe("Upload page", () => {
     expect(btn).toBeDisabled();
   });
 
-  it("shows result card after successful upload", async () => {
-    const { uploadFile } = await import("../../api/upload");
-    vi.mocked(uploadFile).mockResolvedValueOnce({
+  it("shows editable review form after extraction", async () => {
+    const { extractFile } = await import("../../api/upload");
+    vi.mocked(extractFile).mockResolvedValueOnce({
       success: true,
       data: {
         status: "confirmed",
@@ -75,9 +77,11 @@ describe("Upload page", () => {
           amount_inr: 2000,
           date: "2026-03-26",
           category: "other",
+          payment_method: "upi",
+          description: "Test expense",
+          confidence: "high",
         },
         fileKey: "FY25-26/Expenses/2026-03/other_20260326_test.jpg",
-        rowNum: 5,
       },
     });
 
@@ -91,16 +95,18 @@ describe("Upload page", () => {
     await user.click(submitBtn);
 
     await waitFor(() => {
-      expect(screen.getByText("confirmed")).toBeInTheDocument();
+      expect(screen.getByText("Confirm & Save")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Test Shop")).toBeInTheDocument();
-    expect(screen.getByText(/Saved as:/)).toBeInTheDocument();
+    expect(screen.getByText("Cancel")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("2026-03-26")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("2000")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Test Shop")).toBeInTheDocument();
   });
 
-  it("shows error message on upload failure", async () => {
-    const { uploadFile } = await import("../../api/upload");
-    vi.mocked(uploadFile).mockRejectedValueOnce(new Error("OCR failed"));
+  it("shows error message on extraction failure", async () => {
+    const { extractFile } = await import("../../api/upload");
+    vi.mocked(extractFile).mockRejectedValueOnce(new Error("OCR failed"));
 
     const user = userEvent.setup();
     render(<Upload />);
@@ -112,18 +118,31 @@ describe("Upload page", () => {
     await user.click(submitBtn);
 
     await waitFor(() => {
-      expect(screen.getByText("Failed to upload document. Please try again.")).toBeInTheDocument();
+      expect(screen.getByText("Failed to process document. Please try again.")).toBeInTheDocument();
     });
   });
 
-  it("resets state when 'Upload another' is clicked", async () => {
-    const { uploadFile } = await import("../../api/upload");
-    vi.mocked(uploadFile).mockResolvedValueOnce({
+  it("saves after confirm and shows success", async () => {
+    const { extractFile, confirmUpload } = await import("../../api/upload");
+    vi.mocked(extractFile).mockResolvedValueOnce({
       success: true,
       data: {
         status: "confirmed",
         uploadType: "expense",
-        extracted: { vendor: "Shop", amount_inr: 100 },
+        extracted: {
+          vendor: "Shop",
+          amount_inr: 100,
+          date: "2026-03-26",
+          category: "other",
+          confidence: "high",
+        },
+        fileKey: "FY25-26/Expenses/other.pdf",
+      },
+    });
+    vi.mocked(confirmUpload).mockResolvedValueOnce({
+      success: true,
+      data: {
+        uploadType: "expense",
         fileKey: "FY25-26/Expenses/other.pdf",
         rowNum: 3,
       },
@@ -139,7 +158,62 @@ describe("Upload page", () => {
     await user.click(submitBtn);
 
     await waitFor(() => {
-      expect(screen.getByText("confirmed")).toBeInTheDocument();
+      expect(screen.getByText("Confirm & Save")).toBeInTheDocument();
+    });
+
+    const confirmBtn = screen.getByText("Confirm & Save");
+    await user.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText("saved")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/Saved as:/)).toBeInTheDocument();
+  });
+
+  it("resets state when 'Upload another' is clicked after success", async () => {
+    const { extractFile, confirmUpload } = await import("../../api/upload");
+    vi.mocked(extractFile).mockResolvedValueOnce({
+      success: true,
+      data: {
+        status: "confirmed",
+        uploadType: "expense",
+        extracted: {
+          vendor: "Shop",
+          amount_inr: 100,
+          date: "2026-03-26",
+          category: "other",
+          confidence: "high",
+        },
+        fileKey: "FY25-26/Expenses/other.pdf",
+      },
+    });
+    vi.mocked(confirmUpload).mockResolvedValueOnce({
+      success: true,
+      data: {
+        uploadType: "expense",
+        fileKey: "FY25-26/Expenses/other.pdf",
+        rowNum: 3,
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<Upload />);
+
+    const dropzones = screen.getAllByText("Tap to select or drop file");
+    await user.click(dropzones[0]!);
+
+    const submitBtn = screen.getByRole("button", { name: /upload & extract/i });
+    await user.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText("Confirm & Save")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Confirm & Save"));
+
+    await waitFor(() => {
+      expect(screen.getByText("saved")).toBeInTheDocument();
     });
 
     const resetBtn = screen.getByRole("button", { name: /upload another/i });

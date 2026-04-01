@@ -100,7 +100,7 @@ describe("Auth middleware", () => {
     const token = loginBody.data!.token;
 
     const res = await app.request(
-      "/api/upload",
+      "/api/upload/extract",
       {
         method: "POST",
         headers: {

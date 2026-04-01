@@ -128,11 +128,15 @@ function AttachModal({
   hasExistingFile,
   onAttach,
   onClose,
+  uploading,
+  uploadError,
 }: {
   attachType: "payment" | "bill" | "fira";
   hasExistingFile: boolean;
   onAttach: (file: File, type: "payment" | "bill" | "fira") => void;
   onClose: () => void;
+  uploading: boolean;
+  uploadError: string | null;
 }) {
   const [selectedType, setSelectedType] = useState(attachType);
   const showChoice = attachType === "payment" && hasExistingFile;
@@ -152,7 +156,7 @@ function AttachModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4"
-      onClick={onClose}
+      onClick={uploading ? undefined : onClose}
     >
       <div
         className="border-thin border-border bg-surface-card w-full max-w-sm rounded-xl p-5"
@@ -190,21 +194,52 @@ function AttachModal({
           <p className="text-text-secondary mb-3 text-[13px]">{descriptions[attachType]}</p>
         )}
 
-        <input
-          type="file"
-          accept="image/*,application/pdf"
-          className="text-text mb-4 block w-full text-sm"
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) {
-              onAttach(f, selectedType);
-              onClose();
-            }
-          }}
-        />
+        {uploading ? (
+          <div className="mb-4 flex flex-col items-center gap-3 py-4">
+            <svg
+              className="text-accent-blue h-6 w-6 animate-spin"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
+            </svg>
+            <p className="text-text-secondary text-sm">Processing with OCR…</p>
+          </div>
+        ) : (
+          <input
+            type="file"
+            accept="image/*,application/pdf"
+            className="text-text mb-4 block w-full text-sm"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onAttach(f, selectedType);
+            }}
+          />
+        )}
+
+        {uploadError && (
+          <div className="bg-accent-red/10 mb-4 rounded-lg px-3 py-2">
+            <p className="text-accent-red text-sm">{uploadError}</p>
+          </div>
+        )}
+
         <button
           onClick={onClose}
-          className="border-thin border-border bg-surface text-text w-full rounded-lg px-3 py-2 text-sm"
+          disabled={uploading}
+          className="border-thin border-border bg-surface text-text w-full rounded-lg px-3 py-2 text-sm disabled:opacity-40"
         >
           Cancel
         </button>
@@ -232,6 +267,8 @@ export function Transactions() {
     addPayment,
     swapBill,
     addFira,
+    uploading,
+    uploadError,
     rows,
     refetch,
   } = useTransactions(fy);
@@ -737,10 +774,17 @@ export function Transactions() {
         <AttachModal
           attachType={attachingType}
           hasExistingFile={attachingHasFile}
-          onAttach={(file, type) => {
-            if (type === "fira") void addFira(attachingId, file);
-            else if (type === "bill") void swapBill(attachingRowNum, file);
-            else void addPayment(attachingRowNum, file);
+          uploading={uploading}
+          uploadError={uploadError}
+          onAttach={async (file, type) => {
+            try {
+              if (type === "fira") await addFira(attachingId, file);
+              else if (type === "bill") await swapBill(attachingRowNum, file);
+              else await addPayment(attachingRowNum, file);
+              setAttachingId(null);
+            } catch {
+              /* error is shown in modal via uploadError */
+            }
           }}
           onClose={() => setAttachingId(null)}
         />

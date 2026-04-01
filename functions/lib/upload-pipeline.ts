@@ -1,26 +1,24 @@
-import type { UploadType, Env, OcrResult } from "./types";
+import type { UploadType, Env } from "./types";
 import { extractDocument } from "./ocr";
 import { uploadToR2 } from "./storage";
 import { appendRow, findRowByNetInr, updateFiraColumns } from "./sheets";
 
-export interface UploadInput {
+export interface ExtractInput {
   fileBuffer: ArrayBuffer;
   mimeType: string;
   fileName: string;
   uploadType: UploadType;
   customDescription: string | null;
-  businessPct: number | null;
 }
 
-export interface UploadOutput {
+export interface ExtractOutput {
   status: "confirmed" | "review";
   uploadType: UploadType;
   extracted: Record<string, unknown>;
   fileKey: string;
-  [key: string]: unknown;
 }
 
-export async function runUploadPipeline(input: UploadInput, env: Env): Promise<UploadOutput> {
+export async function runExtractPipeline(input: ExtractInput, env: Env): Promise<ExtractOutput> {
   const ocrResult = await extractDocument(
     input.fileBuffer,
     input.mimeType,
@@ -44,28 +42,47 @@ export async function runUploadPipeline(input: UploadInput, env: Env): Promise<U
   const confidence = ocrResult.type !== "other" ? ocrResult.data.confidence : "low";
   const status = confidence === "high" ? "confirmed" : "review";
 
-  const now = new Date().toISOString();
-  const sheetResult = await writeToSheets(
-    input.uploadType,
-    ocrResult,
-    fileKey,
-    input.businessPct,
-    now,
-    env,
-  );
-
   return {
     status,
     uploadType: input.uploadType,
     extracted: ocrResult.data as Record<string, unknown>,
     fileKey,
-    ...sheetResult,
   };
+}
+
+export interface ConfirmInput {
+  uploadType: UploadType;
+  fileKey: string;
+  fields: Record<string, unknown>;
+  businessPct: number | null;
+}
+
+export interface ConfirmOutput {
+  uploadType: UploadType;
+  fileKey: string;
+  [key: string]: unknown;
+}
+
+export async function confirmAndWriteToSheets(
+  input: ConfirmInput,
+  env: Env,
+): Promise<ConfirmOutput> {
+  const now = new Date().toISOString();
+  const result = await writeToSheets(
+    input.uploadType,
+    input.fields,
+    input.fileKey,
+    input.businessPct,
+    now,
+    env,
+  );
+
+  return { uploadType: input.uploadType, fileKey: input.fileKey, ...result };
 }
 
 async function writeToSheets(
   uploadType: UploadType,
-  ocrResult: OcrResult,
+  fields: Record<string, unknown>,
   fileKey: string,
   businessPctOverride: number | null,
   now: string,
@@ -73,30 +90,30 @@ async function writeToSheets(
 ): Promise<Record<string, unknown>> {
   switch (uploadType) {
     case "skydo_invoice": {
-      if (ocrResult.type !== "skydo_invoice") throw new Error("Type mismatch");
-      const d = ocrResult.data;
+      const f = fields;
+      const confidence = String(f["confidence"] ?? "low");
       const incomeRow = [
-        d.date,
-        d.payer,
-        d.invoice_number,
-        String(d.usd_amount),
-        String(d.net_inr_received),
-        d.skydo_prn,
+        String(f["date"] ?? ""),
+        String(f["payer"] ?? ""),
+        String(f["invoice_number"] ?? ""),
+        String(f["usd_amount"] ?? ""),
+        String(f["net_inr_received"] ?? ""),
+        String(f["skydo_prn"] ?? ""),
         "",
         "",
         fileKey,
-        d.confidence,
+        confidence,
         now,
       ];
       const incomeRowNum = await appendRow("Income", incomeRow, env);
 
       const feeRow = [
-        d.date,
-        `Skydo fee – ${d.payer}`,
+        String(f["date"] ?? ""),
+        `Skydo fee – ${String(f["payer"] ?? "")}`,
         "skydo_fees",
-        String(d.skydo_charges_inr),
+        String(f["skydo_charges_inr"] ?? ""),
         "100",
-        String(d.skydo_charges_inr),
+        String(f["skydo_charges_inr"] ?? ""),
         "bank",
         "Skydo",
         fileKey,
@@ -111,12 +128,12 @@ async function writeToSheets(
     }
 
     case "fira": {
-      if (ocrResult.type !== "fira") throw new Error("Type mismatch");
-      const d = ocrResult.data;
+      const f = fields;
+      const inrAmount = Number(f["inr_amount"] ?? 0);
 
-      const match = await findRowByNetInr("Income", d.inr_amount, env);
+      const match = await findRowByNetInr("Income", inrAmount, env);
       if (match) {
-        await updateFiraColumns(match.rowNum, fileKey, d.transaction_ref, env);
+        await updateFiraColumns(match.rowNum, fileKey, String(f["transaction_ref"] ?? ""), env);
         return { linked: true, matchedRow: match.rowNum };
       }
 
@@ -124,21 +141,22 @@ async function writeToSheets(
     }
 
     case "expense": {
-      if (ocrResult.type !== "expense") throw new Error("Type mismatch");
-      const d = ocrResult.data;
-      const bpct = businessPctOverride ?? d.business_pct;
-      const claimable = d.amount_inr * (bpct / 100);
+      const f = fields;
+      const amount = Number(f["amount_inr"] ?? 0);
+      const bpct = businessPctOverride ?? Number(f["business_pct"] ?? 100);
+      const claimable = amount * (bpct / 100);
+      const confidence = String(f["confidence"] ?? "low");
       const row = [
-        d.date,
-        d.description ?? "",
-        d.category,
-        String(d.amount_inr),
+        String(f["date"] ?? ""),
+        String(f["description"] ?? ""),
+        String(f["category"] ?? "other"),
+        String(amount),
         String(bpct),
         String(claimable),
-        d.payment_method ?? "",
-        d.vendor ?? "",
+        String(f["payment_method"] ?? ""),
+        String(f["vendor"] ?? ""),
         fileKey,
-        d.confidence,
+        confidence,
         now,
         "unpaid",
         "0",
@@ -151,19 +169,19 @@ async function writeToSheets(
       throw new Error("payment_proof should not be used as a direct upload type");
 
     case "other": {
-      const d = ocrResult.data as Record<string, unknown>;
+      const f = fields;
       const bpct = businessPctOverride ?? 100;
-      const amount = String(d["amount"] ?? "");
+      const amount = String(f["amount"] ?? f["amount_inr"] ?? "");
       const claimable = amount ? String(parseFloat(amount) * (bpct / 100)) : amount;
       const row = [
-        String(d["date"] ?? ""),
-        String(d["description"] ?? ""),
+        String(f["date"] ?? ""),
+        String(f["description"] ?? ""),
         "other",
         amount,
         String(bpct),
         claimable,
         "",
-        String(d["vendor_or_client"] ?? ""),
+        String(f["vendor_or_client"] ?? f["vendor"] ?? ""),
         fileKey,
         "low",
         now,

@@ -1,11 +1,11 @@
 import { useState, useCallback } from "react";
 import axios from "axios";
-import { uploadFile } from "../api/upload";
-import type { UploadResponse } from "../api/upload";
+import { extractFile, confirmUpload, cancelUpload } from "../api/upload";
+import type { ConfirmResponse } from "../api/upload";
 import type { UploadType } from "../api/types";
 import { maybeCompressImage } from "../lib/compressImage";
 
-export type UploadStatus = "idle" | "uploading" | "success" | "error";
+export type UploadStatus = "idle" | "extracting" | "review" | "confirming" | "success" | "error";
 
 interface UploadState {
   status: UploadStatus;
@@ -13,7 +13,10 @@ interface UploadState {
   uploadType: UploadType;
   description: string;
   businessPct: number;
-  result: UploadResponse["data"] | null;
+  extractedFields: Record<string, unknown> | null;
+  fileKey: string | null;
+  ocrStatus: "confirmed" | "review" | null;
+  confirmResult: ConfirmResponse["data"] | null;
   error: string | null;
   progress: number;
 }
@@ -24,7 +27,10 @@ const INITIAL_STATE: UploadState = {
   uploadType: "expense",
   description: "",
   businessPct: 100,
-  result: null,
+  extractedFields: null,
+  fileKey: null,
+  ocrStatus: null,
+  confirmResult: null,
   error: null,
   progress: 0,
 };
@@ -33,7 +39,14 @@ export function useUpload() {
   const [state, setState] = useState<UploadState>(INITIAL_STATE);
 
   const setFile = useCallback((file: File | null) => {
-    setState((s) => ({ ...s, file, status: "idle", result: null, error: null }));
+    setState((s) => ({
+      ...s,
+      file,
+      status: "idle",
+      extractedFields: null,
+      fileKey: null,
+      error: null,
+    }));
   }, []);
 
   const setUploadType = useCallback((uploadType: UploadType) => {
@@ -48,10 +61,17 @@ export function useUpload() {
     setState((s) => ({ ...s, businessPct }));
   }, []);
 
+  const updateField = useCallback((key: string, value: unknown) => {
+    setState((s) => ({
+      ...s,
+      extractedFields: s.extractedFields ? { ...s.extractedFields, [key]: value } : null,
+    }));
+  }, []);
+
   const submit = useCallback(async () => {
     if (!state.file) return;
 
-    setState((s) => ({ ...s, status: "uploading", error: null, progress: 0 }));
+    setState((s) => ({ ...s, status: "extracting", error: null, progress: 0 }));
 
     const progressInterval = setInterval(() => {
       setState((s) => ({
@@ -62,23 +82,25 @@ export function useUpload() {
 
     try {
       const compressed = await maybeCompressImage(state.file);
-      const isExpenseType = state.uploadType === "expense" || state.uploadType === "other";
-      const res = await uploadFile(
-        compressed,
-        state.uploadType,
-        state.description || undefined,
-        isExpenseType ? state.businessPct : undefined,
-      );
+      const res = await extractFile(compressed, state.uploadType, state.description || undefined);
       clearInterval(progressInterval);
+
+      const fields = { ...res.data.extracted };
+      if (state.description && !fields["description"]) {
+        fields["description"] = state.description;
+      }
+
       setState((s) => ({
         ...s,
-        status: "success",
-        result: res.data,
+        status: "review",
+        extractedFields: fields,
+        fileKey: res.data.fileKey,
+        ocrStatus: res.data.status,
         progress: 100,
       }));
     } catch (err) {
       clearInterval(progressInterval);
-      let message = "Failed to upload document. Please try again.";
+      let message = "Failed to process document. Please try again.";
       if (axios.isAxiosError(err)) {
         const code = err.response?.data?.code as string | undefined;
         if (code === "VALIDATION_ERROR") {
@@ -93,7 +115,45 @@ export function useUpload() {
       }
       setState((s) => ({ ...s, status: "error", error: message, progress: 0 }));
     }
-  }, [state.file, state.uploadType, state.description, state.businessPct]);
+  }, [state.file, state.uploadType, state.description]);
+
+  const confirm = useCallback(async () => {
+    if (!state.fileKey || !state.extractedFields) return;
+
+    setState((s) => ({ ...s, status: "confirming", error: null }));
+
+    try {
+      const res = await confirmUpload(
+        state.uploadType,
+        state.fileKey,
+        state.extractedFields,
+        state.businessPct,
+      );
+
+      setState((s) => ({
+        ...s,
+        status: "success",
+        confirmResult: res.data,
+      }));
+    } catch (err) {
+      let message = "Failed to save transaction. Please try again.";
+      if (axios.isAxiosError(err)) {
+        message = err.response?.data?.error ?? message;
+      }
+      setState((s) => ({ ...s, status: "review", error: message }));
+    }
+  }, [state.fileKey, state.extractedFields, state.uploadType, state.businessPct]);
+
+  const cancel = useCallback(async () => {
+    if (state.fileKey) {
+      try {
+        await cancelUpload(state.fileKey);
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
+    setState(INITIAL_STATE);
+  }, [state.fileKey]);
 
   const reset = useCallback(() => {
     setState(INITIAL_STATE);
@@ -105,7 +165,10 @@ export function useUpload() {
     setUploadType,
     setDescription,
     setBusinessPct,
+    updateField,
     submit,
+    confirm,
+    cancel,
     reset,
   };
 }
