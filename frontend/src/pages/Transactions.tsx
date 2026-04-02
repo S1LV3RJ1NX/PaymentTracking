@@ -147,15 +147,18 @@ function AttachModal({
   onClose,
   uploading,
   uploadError,
+  expenseAmount,
 }: {
   attachType: "payment" | "bill" | "fira";
   hasExistingFile: boolean;
-  onAttach: (file: File, type: "payment" | "bill" | "fira") => void;
+  onAttach: (file: File, type: "payment" | "bill" | "fira", amountOverride?: string) => void;
   onClose: () => void;
   uploading: boolean;
   uploadError: string | null;
+  expenseAmount?: number;
 }) {
   const [selectedType, setSelectedType] = useState(attachType);
+  const [amountOverride, setAmountOverride] = useState("");
   const showChoice = attachType === "payment" && hasExistingFile;
 
   const labels: Record<string, string> = {
@@ -211,6 +214,29 @@ function AttachModal({
           <p className="text-text-secondary mb-3 text-[13px]">{descriptions[attachType]}</p>
         )}
 
+        {selectedType === "payment" && (
+          <div className="mb-3">
+            {expenseAmount !== undefined && expenseAmount > 0 && (
+              <p className="text-text-secondary mb-1.5 text-[12px]">
+                Expense amount: ₹
+                {expenseAmount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+              </p>
+            )}
+            <label className="text-text-secondary mb-1 block text-[12px]">
+              Payment amount (leave blank to use OCR-detected)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={amountOverride}
+              onChange={(e) => setAmountOverride(e.target.value)}
+              placeholder="e.g. 1388.44"
+              className="border-thin border-border bg-surface-card text-text placeholder:text-text-tertiary focus:ring-accent-blue/30 w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+            />
+          </div>
+        )}
+
         {uploading ? (
           <div className="mb-4 flex flex-col items-center gap-3 py-4">
             <svg
@@ -242,7 +268,7 @@ function AttachModal({
             className="text-text mb-4 block w-full text-sm"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) onAttach(f, selectedType);
+              if (f) onAttach(f, selectedType, amountOverride || undefined);
             }}
           />
         )}
@@ -304,6 +330,7 @@ export function Transactions() {
   const [attachingType, setAttachingType] = useState<"payment" | "bill" | "fira">("payment");
   const [attachingRowNum, setAttachingRowNum] = useState<number>(0);
   const [attachingHasFile, setAttachingHasFile] = useState(false);
+  const [attachingExpenseAmount, setAttachingExpenseAmount] = useState<number | undefined>();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
@@ -632,6 +659,10 @@ export function Transactions() {
                                   setAttachingRowNum(row.rowNum);
                                   setAttachingType("payment");
                                   setAttachingHasFile(!!row.values.file_key);
+                                  setAttachingExpenseAmount(
+                                    parseFloat(row.values.amount_inr?.replace(/,/g, "") ?? "0") ||
+                                      undefined,
+                                  );
                                 }}
                                 className="text-text-secondary hover:bg-accent-blue/10 hover:text-accent-blue rounded-md p-1.5 transition-colors"
                               >
@@ -806,11 +837,12 @@ export function Transactions() {
           hasExistingFile={attachingHasFile}
           uploading={uploading}
           uploadError={uploadError}
-          onAttach={async (file, type) => {
+          expenseAmount={attachingExpenseAmount}
+          onAttach={async (file, type, amountOverride) => {
             try {
               if (type === "fira") await addFira(attachingId, file);
               else if (type === "bill") await swapBill(attachingRowNum, file);
-              else await addPayment(attachingRowNum, file);
+              else await addPayment(attachingRowNum, file, amountOverride);
               setAttachingId(null);
             } catch {
               /* error is shown in modal via uploadError */

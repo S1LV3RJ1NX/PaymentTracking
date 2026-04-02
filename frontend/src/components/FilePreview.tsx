@@ -257,12 +257,15 @@ export function FilePreview({
           ? "partial"
           : "overpaid";
 
+  const [paymentAmountInput, setPaymentAmountInput] = useState("");
+
   const handleAddPayment = async (file: File) => {
     if (!expenseRowNum) return;
     setAdding(true);
     try {
       const compressed = await maybeCompressImage(file);
-      await addExpensePayment(expenseRowNum, compressed);
+      await addExpensePayment(expenseRowNum, compressed, paymentAmountInput || undefined);
+      setPaymentAmountInput("");
       await fetchPayments();
       onPaymentsChanged?.();
     } catch {
@@ -392,6 +395,15 @@ export function FilePreview({
             ) : payments.length === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8">
                 <span className="text-text-tertiary text-sm">No payment proofs yet</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={paymentAmountInput}
+                  onChange={(e) => setPaymentAmountInput(e.target.value)}
+                  placeholder="Amount (blank = OCR)"
+                  className="border-thin border-border bg-surface-card text-text placeholder:text-text-tertiary focus:ring-accent-blue/30 w-48 rounded-lg px-3 py-1.5 text-center text-sm focus:outline-none focus:ring-2"
+                />
                 <label className="bg-accent-blue hover:bg-accent-blue/90 cursor-pointer rounded-lg px-4 py-2 text-xs font-medium text-white transition-colors">
                   {adding ? "Uploading..." : "Add Payment Proof"}
                   <input
@@ -442,6 +454,15 @@ export function FilePreview({
                       }}
                     />
                   </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={paymentAmountInput}
+                    onChange={(e) => setPaymentAmountInput(e.target.value)}
+                    placeholder="Amt (blank = OCR)"
+                    className="border-thin border-border bg-surface-card text-text placeholder:text-text-tertiary focus:ring-accent-blue/30 ml-auto w-32 rounded-full px-2.5 py-1 text-[11px] focus:outline-none focus:ring-2"
+                  />
                 </div>
 
                 {/* Selected payment preview */}

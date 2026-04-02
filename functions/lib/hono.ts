@@ -620,11 +620,14 @@ app.post("/expenses/:rowNum/payments", ownerOnly, async (c) => {
       console.error("[expenses/payments] OCR failed (continuing):", ocrErr);
     }
 
+    const amountOverride = formData.get("amount_override");
+    const amount = amountOverride ? String(amountOverride) : String(ocrData["amount_inr"] ?? "");
+
     const now = new Date().toISOString();
     const paymentRow = [
       String(rowNum),
       String(ocrData["date"] ?? date),
-      String(ocrData["amount_inr"] ?? ""),
+      amount,
       String(ocrData["payment_method"] ?? ""),
       String(ocrData["upi_transaction_id"] ?? ""),
       paymentKey,

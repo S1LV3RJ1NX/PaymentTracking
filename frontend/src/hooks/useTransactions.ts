@@ -74,11 +74,11 @@ export function useTransactions(fy: string) {
   );
 
   const addPayment = useCallback(
-    async (rowNum: number, file: File) => {
+    async (rowNum: number, file: File, amountOverride?: string) => {
       setUploading(true);
       setUploadError(null);
       try {
-        await addExpensePayment(rowNum, await maybeCompressImage(file));
+        await addExpensePayment(rowNum, await maybeCompressImage(file), amountOverride);
         await fetchData();
       } catch (e) {
         setUploadError(e instanceof Error ? e.message : "Upload failed");

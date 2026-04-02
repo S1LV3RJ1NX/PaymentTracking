@@ -70,9 +70,11 @@ export async function getExpensePayments(expenseRowNum: number): Promise<Payment
 export async function addExpensePayment(
   expenseRowNum: number,
   file: File,
+  amountOverride?: string,
 ): Promise<{ paymentRowNum: number; paymentKey: string; status: string; totalPaid: number }> {
   const form = new FormData();
   form.append("file", file);
+  if (amountOverride) form.append("amount_override", amountOverride);
   const res = await api.post<{
     success: true;
     data: { paymentRowNum: number; paymentKey: string; status: string; totalPaid: number };
