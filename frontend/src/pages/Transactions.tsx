@@ -144,6 +144,7 @@ function AttachModal({
   attachType,
   hasExistingFile,
   onAttach,
+  onManualPayment,
   onClose,
   uploading,
   uploadError,
@@ -151,7 +152,17 @@ function AttachModal({
 }: {
   attachType: "payment" | "bill" | "fira";
   hasExistingFile: boolean;
-  onAttach: (file: File, type: "payment" | "bill" | "fira", amountOverride?: string) => void;
+  onAttach: (
+    file: File,
+    type: "payment" | "bill" | "fira",
+    amountOverride?: string,
+  ) => void | Promise<void>;
+  onManualPayment?: (data: {
+    amount: string;
+    date: string;
+    payment_method: string;
+    reference: string;
+  }) => void | Promise<void>;
   onClose: () => void;
   uploading: boolean;
   uploadError: string | null;
@@ -159,6 +170,11 @@ function AttachModal({
 }) {
   const [selectedType, setSelectedType] = useState(attachType);
   const [amountOverride, setAmountOverride] = useState("");
+  const [manualMode, setManualMode] = useState(false);
+  const [manualRef, setManualRef] = useState("");
+  const [manualAmount, setManualAmount] = useState("");
+  const [manualDate, setManualDate] = useState(new Date().toISOString().slice(0, 10));
+  const [manualMethod, setManualMethod] = useState("upi");
   const showChoice = attachType === "payment" && hasExistingFile;
 
   const labels: Record<string, string> = {
@@ -170,8 +186,10 @@ function AttachModal({
   const descriptions: Record<string, string> = {
     payment: "Upload a payment screenshot or receipt. OCR will extract the amount automatically.",
     bill: "Replace the main document with the actual bill/invoice. This re-runs OCR and updates the expense amount.",
-    fira: "Upload the FIRA certificate for this income transaction.",
+    fira: "Upload one or more FIRA certificates for this income transaction.",
   };
+
+  const canSubmitManual = manualRef.trim() && manualAmount.trim();
 
   return (
     <div
@@ -200,7 +218,10 @@ function AttachModal({
                   type="radio"
                   name="attach-type"
                   checked={selectedType === t}
-                  onChange={() => setSelectedType(t)}
+                  onChange={() => {
+                    setSelectedType(t);
+                    setManualMode(false);
+                  }}
                   className="accent-accent-blue mt-0.5"
                 />
                 <div>
@@ -214,7 +235,7 @@ function AttachModal({
           <p className="text-text-secondary mb-3 text-[13px]">{descriptions[attachType]}</p>
         )}
 
-        {selectedType === "payment" && (
+        {selectedType === "payment" && !manualMode && (
           <div className="mb-3">
             {expenseAmount !== undefined && expenseAmount > 0 && (
               <p className="text-text-secondary mb-1.5 text-[12px]">
@@ -237,7 +258,85 @@ function AttachModal({
           </div>
         )}
 
-        {uploading ? (
+        {selectedType === "payment" && manualMode ? (
+          <div className="mb-4 space-y-2.5">
+            {expenseAmount !== undefined && expenseAmount > 0 && (
+              <p className="text-text-secondary text-[12px]">
+                Expense amount: ₹
+                {expenseAmount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+              </p>
+            )}
+            <div>
+              <label className="text-text-secondary mb-1 block text-[12px]">
+                Reference number *
+              </label>
+              <input
+                type="text"
+                value={manualRef}
+                onChange={(e) => setManualRef(e.target.value)}
+                placeholder="UPI txn ID or bank ref"
+                className="border-thin border-border bg-surface-card text-text placeholder:text-text-tertiary focus:ring-accent-blue/30 w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+              />
+            </div>
+            <div>
+              <label className="text-text-secondary mb-1 block text-[12px]">Amount (INR) *</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={manualAmount}
+                onChange={(e) => setManualAmount(e.target.value)}
+                placeholder="e.g. 2776.88"
+                className="border-thin border-border bg-surface-card text-text placeholder:text-text-tertiary focus:ring-accent-blue/30 w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+              />
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="text-text-secondary mb-1 block text-[12px]">Date</label>
+                <input
+                  type="date"
+                  value={manualDate}
+                  onChange={(e) => setManualDate(e.target.value)}
+                  className="border-thin border-border bg-surface-card text-text focus:ring-accent-blue/30 w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-text-secondary mb-1 block text-[12px]">Method</label>
+                <select
+                  value={manualMethod}
+                  onChange={(e) => setManualMethod(e.target.value)}
+                  className="border-thin border-border bg-surface-card text-text focus:ring-accent-blue/30 w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                >
+                  <option value="upi">UPI</option>
+                  <option value="bank">Bank</option>
+                  <option value="card">Card</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                if (!canSubmitManual) return;
+                onManualPayment?.({
+                  amount: manualAmount,
+                  date: manualDate,
+                  payment_method: manualMethod,
+                  reference: manualRef,
+                });
+              }}
+              disabled={!canSubmitManual || uploading}
+              className="bg-accent-blue w-full rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+            >
+              {uploading ? "Saving…" : "Save Reference"}
+            </button>
+            <button
+              onClick={() => setManualMode(false)}
+              className="text-accent-blue w-full text-center text-[12px] hover:underline"
+            >
+              Upload a file instead
+            </button>
+          </div>
+        ) : uploading ? (
           <div className="mb-4 flex flex-col items-center gap-3 py-4">
             <svg
               className="text-accent-blue h-6 w-6 animate-spin"
@@ -262,15 +361,36 @@ function AttachModal({
             <p className="text-text-secondary text-sm">Processing with OCR…</p>
           </div>
         ) : (
-          <input
-            type="file"
-            accept="image/*,application/pdf"
-            className="text-text mb-4 block w-full text-sm"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) onAttach(f, selectedType, amountOverride || undefined);
-            }}
-          />
+          <>
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              multiple={selectedType === "fira"}
+              className="text-text mb-4 block w-full text-sm"
+              onChange={async (e) => {
+                const files = e.target.files;
+                if (!files || files.length === 0) return;
+                if (selectedType === "fira" && files.length > 1) {
+                  for (let i = 0; i < files.length; i++) {
+                    await onAttach(files[i]!, selectedType);
+                  }
+                } else {
+                  onAttach(files[0]!, selectedType, amountOverride || undefined);
+                }
+              }}
+            />
+            {selectedType === "payment" && onManualPayment && (
+              <button
+                onClick={() => {
+                  setManualMode(true);
+                  if (expenseAmount) setManualAmount(String(expenseAmount));
+                }}
+                className="text-accent-blue mb-4 w-full text-center text-[12px] hover:underline"
+              >
+                No file? Enter reference manually
+              </button>
+            )}
+          </>
         )}
 
         {uploadError && (
@@ -310,6 +430,8 @@ export function Transactions() {
     addPayment,
     swapBill,
     addFira,
+    addManualPaymentRef,
+    addBatchManualPayment,
     uploading,
     uploadError,
     rows,
@@ -334,6 +456,13 @@ export function Transactions() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
+  const [showBatchRef, setShowBatchRef] = useState(false);
+  const [batchRefData, setBatchRefData] = useState({
+    reference: "",
+    date: new Date().toISOString().slice(0, 10),
+    payment_method: "upi",
+  });
+  const [batchRefProgress, setBatchRefProgress] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -783,7 +912,7 @@ export function Transactions() {
         {total} transaction{total !== 1 ? "s" : ""} in {fy}
       </div>
 
-      {/* Floating bulk download bar */}
+      {/* Floating bulk action bar */}
       {selected.size > 0 && (
         <div className="bg-surface-card border-thin border-border fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-xl px-5 py-3 shadow-lg">
           <span className="text-text text-sm font-medium">{selected.size} selected</span>
@@ -792,14 +921,132 @@ export function Transactions() {
             disabled={downloading}
             className="bg-accent-blue rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {downloading ? "Downloading…" : `Download (${selected.size})`}
+            {downloading ? "Downloading…" : "Download"}
           </button>
+          {tab === "Expenses" && isOwner && (
+            <button
+              onClick={() => setShowBatchRef(true)}
+              className="bg-accent-green rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
+            >
+              Add Reference
+            </button>
+          )}
           <button
             onClick={() => setSelected(new Set())}
             className="text-text-secondary hover:text-text text-sm"
           >
             Clear
           </button>
+        </div>
+      )}
+
+      {/* Batch Reference Modal */}
+      {showBatchRef && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4"
+          onClick={() => !uploading && setShowBatchRef(false)}
+        >
+          <div
+            className="border-thin border-border bg-surface-card w-full max-w-sm rounded-xl p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="label-uppercase mb-4">
+              Add Reference to {selected.size} expense{selected.size !== 1 ? "s" : ""}
+            </h3>
+            <p className="text-text-secondary mb-3 text-[13px]">
+              The same reference will be applied to all selected expenses, using each expense's own
+              amount.
+            </p>
+            <div className="space-y-2.5">
+              <div>
+                <label className="text-text-secondary mb-1 block text-[12px]">
+                  Reference number *
+                </label>
+                <input
+                  type="text"
+                  value={batchRefData.reference}
+                  onChange={(e) => setBatchRefData((s) => ({ ...s, reference: e.target.value }))}
+                  placeholder="UPI txn ID or bank ref"
+                  className="border-thin border-border bg-surface-card text-text placeholder:text-text-tertiary focus:ring-accent-blue/30 w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                />
+              </div>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <label className="text-text-secondary mb-1 block text-[12px]">Date</label>
+                  <input
+                    type="date"
+                    value={batchRefData.date}
+                    onChange={(e) => setBatchRefData((s) => ({ ...s, date: e.target.value }))}
+                    className="border-thin border-border bg-surface-card text-text focus:ring-accent-blue/30 w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="text-text-secondary mb-1 block text-[12px]">Method</label>
+                  <select
+                    value={batchRefData.payment_method}
+                    onChange={(e) =>
+                      setBatchRefData((s) => ({ ...s, payment_method: e.target.value }))
+                    }
+                    className="border-thin border-border bg-surface-card text-text focus:ring-accent-blue/30 w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                  >
+                    <option value="upi">UPI</option>
+                    <option value="bank">Bank</option>
+                    <option value="card">Card</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {batchRefProgress && (
+              <p className="text-text-secondary mt-3 text-center text-sm">{batchRefProgress}</p>
+            )}
+
+            {uploadError && (
+              <div className="bg-accent-red/10 mt-3 rounded-lg px-3 py-2">
+                <p className="text-accent-red text-sm">{uploadError}</p>
+              </div>
+            )}
+
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={() => setShowBatchRef(false)}
+                disabled={uploading}
+                className="border-thin border-border text-text-secondary flex-1 rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!batchRefData.reference.trim()) return;
+                  const selectedRows = rows.filter((r) => selected.has(r.id));
+                  const entries = selectedRows.map((r) => ({
+                    rowNum: r.rowNum,
+                    data: {
+                      amount: r.values.amount_inr?.replace(/,/g, "") ?? "0",
+                      date: batchRefData.date,
+                      payment_method: batchRefData.payment_method,
+                      reference: batchRefData.reference,
+                    },
+                  }));
+                  try {
+                    await addBatchManualPayment(entries, (done, total) => {
+                      setBatchRefProgress(`Adding reference ${done} of ${total}…`);
+                    });
+                    setShowBatchRef(false);
+                    setSelected(new Set());
+                    setBatchRefProgress(null);
+                  } catch {
+                    setBatchRefProgress(null);
+                  }
+                }}
+                disabled={uploading || !batchRefData.reference.trim()}
+                className="bg-accent-blue flex-1 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {uploading ? "Saving…" : "Apply to All"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -843,6 +1090,14 @@ export function Transactions() {
               if (type === "fira") await addFira(attachingId, file);
               else if (type === "bill") await swapBill(attachingRowNum, file);
               else await addPayment(attachingRowNum, file, amountOverride);
+              setAttachingId(null);
+            } catch {
+              /* error is shown in modal via uploadError */
+            }
+          }}
+          onManualPayment={async (data) => {
+            try {
+              await addManualPaymentRef(attachingRowNum, data);
               setAttachingId(null);
             } catch {
               /* error is shown in modal via uploadError */

@@ -69,7 +69,9 @@ Rules:
 - For UPI screenshots: extract merchant name, amount, transaction ID, date
 - business_pct is 100 unless it looks like a personal/non-business expense (then 50)
 - If date is missing or unclear, set confidence to "low"
-- Dates in DD/MM/YYYY or DD-MM-YYYY format should be converted to YYYY-MM-DD`;
+- Dates in DD/MM/YYYY or DD-MM-YYYY format should be converted to YYYY-MM-DD
+- If the document contains multiple pages or invoices, extract data from the MAIN product/service invoice (the one with the highest amount), not marketplace fee pages
+- Return a single JSON object, never an array`;
 
 const PAYMENT_PROOF_PROMPT = `You are a financial document parser. This is a payment proof — a UPI screenshot, bank transfer confirmation, or card payment receipt.
 Extract ONLY payment details. Return ONLY valid JSON, no markdown, no explanation.
@@ -170,8 +172,13 @@ export async function extractDocument(
   const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fenceMatch) jsonStr = fenceMatch[1]!.trim();
 
-  const raw = JSON.parse(jsonStr) as Record<string, unknown>;
-  return validateOcrResult(raw, uploadType);
+  let raw = JSON.parse(jsonStr) as Record<string, unknown> | Record<string, unknown>[];
+  if (Array.isArray(raw)) {
+    raw = raw.reduce((best, item) =>
+      ((item.amount_inr as number) ?? 0) > ((best.amount_inr as number) ?? 0) ? item : best,
+    );
+  }
+  return validateOcrResult(raw as Record<string, unknown>, uploadType);
 }
 
 function validateOcrResult(raw: Record<string, unknown>, uploadType: UploadType) {

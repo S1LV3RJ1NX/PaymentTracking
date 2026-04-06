@@ -106,7 +106,10 @@ export function useUpload() {
         if (code === "VALIDATION_ERROR") {
           message = err.response?.data?.error ?? message;
         } else if (code === "OCR_FAILED") {
-          message = "Could not read the document. Try a clearer image or PDF.";
+          const detail = err.response?.data?.error;
+          message = detail
+            ? `OCR failed: ${detail}`
+            : "Could not read the document. Try a clearer image or PDF.";
         } else if (code === "STORAGE_ERROR") {
           message = "Failed to save file. Please try again.";
         } else if (err.code === "ECONNABORTED") {

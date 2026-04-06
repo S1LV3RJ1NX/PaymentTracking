@@ -62,7 +62,7 @@ export type FiraResult = z.infer<typeof FiraResultSchema>;
 
 export const ExpenseResultSchema = z.object({
   vendor: z.string().nullable(),
-  amount_inr: z.number(),
+  amount_inr: z.coerce.number(),
   date: z.string(),
   upi_transaction_id: z.string().nullable(),
   category: z.enum([
@@ -88,7 +88,7 @@ export const ExpenseResultSchema = z.object({
   ]),
   payment_method: z.enum(["upi", "card", "bank", "other"]).nullable(),
   description: z.string().nullable(),
-  business_pct: z.number().default(100),
+  business_pct: z.coerce.number().default(100),
   confidence: z.enum(["high", "medium", "low"]),
   review_reason: z.string().nullable(),
 });

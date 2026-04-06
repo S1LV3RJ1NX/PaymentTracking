@@ -7,8 +7,9 @@ import {
   attachFira,
   addExpensePayment,
   replaceBill,
+  addManualPayment as apiAddManualPayment,
 } from "../api/transactions";
-import type { TransactionRow } from "../api/transactions";
+import type { TransactionRow, ManualPaymentData } from "../api/transactions";
 import { maybeCompressImage } from "../lib/compressImage";
 
 export function useTransactions(fy: string) {
@@ -107,6 +108,46 @@ export function useTransactions(fy: string) {
     [fetchData],
   );
 
+  const addManualPaymentRef = useCallback(
+    async (rowNum: number, data: ManualPaymentData) => {
+      setUploading(true);
+      setUploadError(null);
+      try {
+        await apiAddManualPayment(rowNum, data);
+        await fetchData();
+      } catch (e) {
+        setUploadError(e instanceof Error ? e.message : "Failed to add reference");
+        throw e;
+      } finally {
+        setUploading(false);
+      }
+    },
+    [fetchData],
+  );
+
+  const addBatchManualPayment = useCallback(
+    async (
+      entries: { rowNum: number; data: ManualPaymentData }[],
+      onProgress?: (done: number, total: number) => void,
+    ) => {
+      setUploading(true);
+      setUploadError(null);
+      try {
+        for (let i = 0; i < entries.length; i++) {
+          await apiAddManualPayment(entries[i]!.rowNum, entries[i]!.data);
+          onProgress?.(i + 1, entries.length);
+        }
+        await fetchData();
+      } catch (e) {
+        setUploadError(e instanceof Error ? e.message : "Batch reference failed");
+        throw e;
+      } finally {
+        setUploading(false);
+      }
+    },
+    [fetchData],
+  );
+
   const addFira = useCallback(
     async (id: string, file: File) => {
       setUploading(true);
@@ -143,6 +184,8 @@ export function useTransactions(fy: string) {
     addPayment,
     swapBill,
     addFira,
+    addManualPaymentRef,
+    addBatchManualPayment,
     uploading,
     uploadError,
     refetch: fetchData,

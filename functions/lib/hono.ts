@@ -658,6 +658,57 @@ app.post("/expenses/:rowNum/payments", ownerOnly, async (c) => {
   }
 });
 
+app.post("/expenses/:rowNum/payments/manual", ownerOnly, async (c) => {
+  const rowNum = parseInt(c.req.param("rowNum") ?? "", 10);
+  if (isNaN(rowNum)) {
+    return c.json({ success: false, error: "Invalid row number", code: "VALIDATION_ERROR" }, 400);
+  }
+
+  const body = (await c.req.json()) as {
+    amount?: string;
+    date?: string;
+    payment_method?: string;
+    reference?: string;
+  };
+
+  if (!body.amount || !body.reference) {
+    return c.json(
+      { success: false, error: "amount and reference are required", code: "VALIDATION_ERROR" },
+      400,
+    );
+  }
+
+  try {
+    const expRow = await getRow("Expenses", rowNum, c.env);
+    const expDate = normalizeDate(expRow[0] ?? new Date().toISOString().slice(0, 10));
+    const paymentDate = body.date || expDate;
+
+    const now = new Date().toISOString();
+    const paymentRow = [
+      String(rowNum),
+      paymentDate,
+      body.amount,
+      body.payment_method ?? "upi",
+      body.reference,
+      "",
+      "manual",
+      now,
+    ];
+    const paymentRowNum = await appendRow("Payments", paymentRow, c.env);
+
+    const { status, totalPaid } = await recalcPaymentStatus(rowNum, c.env);
+
+    return c.json({
+      success: true,
+      data: { paymentRowNum, paymentKey: "", status, totalPaid },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to add manual payment";
+    console.error("[expenses/payments/manual]", msg);
+    return c.json({ success: false, error: msg, code: "SHEET_ERROR" }, 500);
+  }
+});
+
 app.delete("/expenses/:rowNum/payments/:paymentRow", ownerOnly, async (c) => {
   const expRowNum = parseInt(c.req.param("rowNum") ?? "", 10);
   const paymentRowNum = parseInt(c.req.param("paymentRow") ?? "", 10);

@@ -15,7 +15,7 @@ describe("DropZone", () => {
     render(<DropZone onFileSelected={vi.fn()} currentFile={null} />);
 
     expect(screen.getByText("Tap to select or drop file")).toBeInTheDocument();
-    expect(screen.getByText("PDF, JPEG, PNG, or WebP — up to 10 MB")).toBeInTheDocument();
+    expect(screen.getByText("PDF, JPEG, PNG, or WebP — up to 10 MB each")).toBeInTheDocument();
   });
 
   it("shows file info when file is selected", () => {
@@ -28,7 +28,7 @@ describe("DropZone", () => {
 
     expect(screen.getByText("receipt.pdf")).toBeInTheDocument();
     expect(screen.getByText("500.0 KB")).toBeInTheDocument();
-    expect(screen.getByText("Tap to change file")).toBeInTheDocument();
+    expect(screen.getByText("Tap to change")).toBeInTheDocument();
   });
 
   it("applies disabled styling", () => {

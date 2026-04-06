@@ -125,6 +125,24 @@ export async function attachFira(id: string, file: File): Promise<{ firaFileKey:
   return res.data.data;
 }
 
+export interface ManualPaymentData {
+  amount: string;
+  date: string;
+  payment_method: string;
+  reference: string;
+}
+
+export async function addManualPayment(
+  expenseRowNum: number,
+  data: ManualPaymentData,
+): Promise<{ paymentRowNum: number; status: string; totalPaid: number }> {
+  const res = await api.post<{
+    success: true;
+    data: { paymentRowNum: number; paymentKey: string; status: string; totalPaid: number };
+  }>(`/expenses/${expenseRowNum}/payments/manual`, data);
+  return res.data.data;
+}
+
 export async function downloadFiles(keys: string[]): Promise<Blob> {
   const res = await api.post("/files/download", { keys }, { responseType: "blob" });
   return res.data as Blob;

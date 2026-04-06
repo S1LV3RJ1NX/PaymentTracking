@@ -1,6 +1,8 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { DropZone } from "../components/DropZone";
 import { useUpload } from "../hooks/useUpload";
+import { useBatchUpload } from "../hooks/useBatchUpload";
+import type { BatchItem } from "../hooks/useBatchUpload";
 import { ComboInput } from "../components/ComboInput";
 import { EXPENSE_CATEGORIES } from "../lib/constants";
 import type { UploadType } from "../api/types";
@@ -473,6 +475,103 @@ function SuccessCard({
   );
 }
 
+function BatchItemCard({
+  item,
+  index,
+  uploadType,
+  onUpdateField,
+}: {
+  item: BatchItem;
+  index: number;
+  uploadType: UploadType;
+  onUpdateField: (index: number, key: string, value: unknown) => void;
+}) {
+  const [expanded, setExpanded] = useState(item.status === "review");
+
+  const statusColors: Record<string, string> = {
+    pending: "bg-gray-100 text-gray-600",
+    extracting: "bg-blue-100 text-blue-700",
+    review: "bg-amber-100 text-amber-700",
+    confirming: "bg-blue-100 text-blue-700",
+    done: "bg-green-100 text-green-700",
+    error: "bg-red-100 text-red-700",
+  };
+
+  return (
+    <div className="border-thin border-border bg-surface-card rounded-lg">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex w-full items-center justify-between px-3 py-2.5"
+      >
+        <span className="text-text truncate text-sm font-medium">
+          #{index + 1} {item.file.name}
+        </span>
+        <span
+          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${statusColors[item.status]}`}
+        >
+          {item.status}
+        </span>
+      </button>
+
+      {expanded && item.extractedFields && uploadType === "expense" && (
+        <div className="border-border border-t px-3 py-3">
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="text-text-secondary mb-0.5 block text-[10px]">Vendor</label>
+                <input
+                  type="text"
+                  value={String(item.extractedFields["vendor"] ?? "")}
+                  onChange={(e) => onUpdateField(index, "vendor", e.target.value)}
+                  className="border-thin border-border bg-surface text-text w-full rounded px-2 py-1 text-xs focus:outline-none"
+                />
+              </div>
+              <div className="w-24">
+                <label className="text-text-secondary mb-0.5 block text-[10px]">Amount</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={String(item.extractedFields["amount_inr"] ?? "")}
+                  onChange={(e) =>
+                    onUpdateField(index, "amount_inr", e.target.value ? Number(e.target.value) : "")
+                  }
+                  className="border-thin border-border bg-surface text-text w-full rounded px-2 py-1 text-xs focus:outline-none"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="text-text-secondary mb-0.5 block text-[10px]">Description</label>
+                <input
+                  type="text"
+                  value={String(item.extractedFields["description"] ?? "")}
+                  onChange={(e) => onUpdateField(index, "description", e.target.value)}
+                  className="border-thin border-border bg-surface text-text w-full rounded px-2 py-1 text-xs focus:outline-none"
+                />
+              </div>
+              <div className="w-24">
+                <label className="text-text-secondary mb-0.5 block text-[10px]">Date</label>
+                <input
+                  type="date"
+                  value={String(item.extractedFields["date"] ?? "")}
+                  onChange={(e) => onUpdateField(index, "date", e.target.value)}
+                  className="border-thin border-border bg-surface text-text w-full rounded px-2 py-1 text-xs focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {item.error && (
+        <div className="border-border border-t px-3 py-2">
+          <p className="text-accent-red text-xs">{item.error}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Upload() {
   const {
     status,
@@ -497,6 +596,10 @@ export function Upload() {
     reset,
   } = useUpload();
 
+  const batch = useBatchUpload();
+  const [batchMode, setBatchMode] = useState(false);
+  const isBatchable = uploadType === "expense" || uploadType === "other";
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("shared") === "1") {
@@ -519,12 +622,76 @@ export function Upload() {
     }
   }, [setFile]);
 
-  const isExtracting = status === "extracting";
-  const isReview = status === "review" || status === "confirming";
-  const showDescription = !isReview && (uploadType === "expense" || uploadType === "other");
-  const showBusinessToggle = !isReview && (uploadType === "expense" || uploadType === "other");
+  if (batchMode && batch.batchStatus === "done") {
+    return (
+      <div className="bg-surface mx-auto min-h-screen max-w-lg px-4 pb-8 pt-6">
+        <h1 className="label-uppercase mb-6 text-center">Upload Document</h1>
+        <div className="border-accent-green bg-surface-card rounded-xl border-2 px-4 py-4 text-center">
+          <span className="bg-accent-green/10 text-accent-green mb-3 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium">
+            saved
+          </span>
+          <p className="text-text text-sm font-medium">
+            {batch.doneCount} expense{batch.doneCount !== 1 ? "s" : ""} saved
+            {batch.errorCount > 0 && `, ${batch.errorCount} failed`}
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            batch.reset();
+            setBatchMode(false);
+          }}
+          className="bg-text text-surface-card mt-4 w-full rounded-lg px-4 py-3 text-sm font-medium transition-opacity hover:opacity-90"
+        >
+          Upload more
+        </button>
+      </div>
+    );
+  }
 
-  if (status === "success") {
+  if (batchMode && (batch.batchStatus === "review" || batch.batchStatus === "confirming")) {
+    const isConfirming = batch.batchStatus === "confirming";
+    return (
+      <div className="bg-surface mx-auto min-h-screen max-w-lg px-4 pb-8 pt-6">
+        <h1 className="label-uppercase mb-6 text-center">
+          Review {batch.items.length} Document{batch.items.length !== 1 ? "s" : ""}
+        </h1>
+        <div className="space-y-2">
+          {batch.items.map((item, idx) => (
+            <BatchItemCard
+              key={idx}
+              item={item}
+              index={idx}
+              uploadType={uploadType}
+              onUpdateField={batch.updateItemField}
+            />
+          ))}
+        </div>
+        <div className="mt-4 flex gap-3">
+          <button
+            onClick={() => {
+              batch.reset();
+              setBatchMode(false);
+            }}
+            disabled={isConfirming}
+            className="border-thin border-border text-text-secondary flex-1 rounded-lg px-4 py-2.5 text-sm font-medium disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => void batch.confirmAll(uploadType)}
+            disabled={isConfirming || batch.reviewableCount === 0}
+            className="bg-accent-blue flex-1 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {isConfirming
+              ? `Saving ${batch.currentIdx + 1} of ${batch.items.length}…`
+              : `Confirm ${batch.reviewableCount} expense${batch.reviewableCount !== 1 ? "s" : ""}`}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!batchMode && status === "success") {
     return (
       <div className="bg-surface mx-auto min-h-screen max-w-lg px-4 pb-8 pt-6">
         <h1 className="label-uppercase mb-6 text-center">Upload Document</h1>
@@ -538,7 +705,8 @@ export function Upload() {
     );
   }
 
-  if (isReview && extractedFields) {
+  const isReview = status === "review" || status === "confirming";
+  if (!batchMode && isReview && extractedFields) {
     return (
       <div className="bg-surface mx-auto min-h-screen max-w-lg px-4 pb-8 pt-6">
         <h1 className="label-uppercase mb-6 text-center">Upload Document</h1>
@@ -558,6 +726,11 @@ export function Upload() {
     );
   }
 
+  const isExtracting = batchMode ? batch.batchStatus === "extracting" : status === "extracting";
+  const showDescription =
+    !isReview && !batchMode && (uploadType === "expense" || uploadType === "other");
+  const showBusinessToggle = !isReview && (uploadType === "expense" || uploadType === "other");
+
   return (
     <div className="bg-surface mx-auto min-h-screen max-w-lg px-4 pb-8 pt-6">
       <h1 className="label-uppercase mb-6 text-center">Upload Document</h1>
@@ -570,7 +743,10 @@ export function Upload() {
             {UPLOAD_TYPES.map((t) => (
               <button
                 key={t.value}
-                onClick={() => setUploadType(t.value)}
+                onClick={() => {
+                  setUploadType(t.value);
+                  if (t.value !== "expense" && t.value !== "other") setBatchMode(false);
+                }}
                 disabled={isExtracting}
                 className={`border-thin rounded-lg px-3 py-2.5 text-left transition-colors ${
                   uploadType === t.value
@@ -585,8 +761,32 @@ export function Upload() {
           </div>
         </div>
 
+        {/* Batch mode toggle */}
+        {isBatchable && !isExtracting && (
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              checked={batchMode}
+              onChange={(e) => setBatchMode(e.target.checked)}
+              className="accent-accent-blue h-4 w-4 rounded"
+            />
+            <span className="text-text-secondary text-sm">Batch mode (multiple files)</span>
+          </label>
+        )}
+
         {/* Main file drop zone */}
-        <DropZone onFileSelected={setFile} currentFile={file} disabled={isExtracting} />
+        {batchMode ? (
+          <DropZone
+            onFileSelected={() => {}}
+            onFilesSelected={batch.setFiles}
+            currentFile={null}
+            currentFiles={batch.items.map((i) => i.file)}
+            multiple
+            disabled={isExtracting}
+          />
+        ) : (
+          <DropZone onFileSelected={setFile} currentFile={file} disabled={isExtracting} />
+        )}
 
         {/* Business / Non-business toggle */}
         {showBusinessToggle && (
@@ -594,10 +794,13 @@ export function Upload() {
             <p className="label-uppercase mb-2">Expense type</p>
             <div className="flex gap-2">
               <button
-                onClick={() => setBusinessPct(100)}
+                onClick={() => {
+                  setBusinessPct(100);
+                  batch.setBusinessPct(100);
+                }}
                 disabled={isExtracting}
                 className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                  businessPct === 100
+                  (batchMode ? batch.businessPct : businessPct) === 100
                     ? "border-accent-blue bg-accent-blue/5 text-accent-blue"
                     : "border-border text-text-secondary hover:border-accent-blue/40"
                 }`}
@@ -605,10 +808,13 @@ export function Upload() {
                 Business
               </button>
               <button
-                onClick={() => setBusinessPct(0)}
+                onClick={() => {
+                  setBusinessPct(0);
+                  batch.setBusinessPct(0);
+                }}
                 disabled={isExtracting}
                 className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                  businessPct === 0
+                  (batchMode ? batch.businessPct : businessPct) === 0
                     ? "border-accent-blue bg-accent-blue/5 text-accent-blue"
                     : "border-border text-text-secondary hover:border-accent-blue/40"
                 }`}
@@ -619,7 +825,7 @@ export function Upload() {
           </div>
         )}
 
-        {/* Description (expense / other) */}
+        {/* Description (single mode only) */}
         {showDescription && (
           <div>
             <label htmlFor="description" className="label-uppercase mb-1.5 block">
@@ -643,15 +849,23 @@ export function Upload() {
             <div className="bg-surface-muted h-1.5 w-full overflow-hidden rounded-full">
               <div
                 className="bg-accent-blue h-full rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }}
+                style={{
+                  width: batchMode
+                    ? `${((batch.currentIdx + 1) / Math.max(batch.items.length, 1)) * 100}%`
+                    : `${progress}%`,
+                }}
               />
             </div>
-            <p className="text-text-tertiary text-center text-xs">Processing with OCR…</p>
+            <p className="text-text-tertiary text-center text-xs">
+              {batchMode
+                ? `Processing ${batch.currentIdx + 1} of ${batch.items.length}…`
+                : "Processing with OCR…"}
+            </p>
           </div>
         )}
 
         {/* Error */}
-        {error && (
+        {!batchMode && error && (
           <div className="bg-accent-red/10 rounded-lg px-3 py-2.5">
             <p className="text-accent-red text-sm">{error}</p>
           </div>
@@ -659,11 +873,21 @@ export function Upload() {
 
         {/* Submit */}
         <button
-          onClick={submit}
-          disabled={!file || isExtracting}
+          onClick={() => {
+            if (batchMode) {
+              void batch.submitAll(uploadType);
+            } else {
+              submit();
+            }
+          }}
+          disabled={batchMode ? batch.items.length === 0 || isExtracting : !file || isExtracting}
           className="bg-text text-surface-card w-full rounded-lg px-4 py-3 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          {isExtracting ? "Processing…" : "Upload & Extract"}
+          {isExtracting
+            ? "Processing…"
+            : batchMode
+              ? `Upload & Extract ${batch.items.length} file${batch.items.length !== 1 ? "s" : ""}`
+              : "Upload & Extract"}
         </button>
       </div>
     </div>

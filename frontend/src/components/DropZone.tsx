@@ -3,7 +3,10 @@ import { useCallback } from "react";
 
 interface DropZoneProps {
   onFileSelected: (file: File) => void;
+  onFilesSelected?: (files: File[]) => void;
   currentFile: File | null;
+  currentFiles?: File[];
+  multiple?: boolean;
   disabled?: boolean;
 }
 
@@ -20,21 +23,35 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function DropZone({ onFileSelected, currentFile, disabled }: DropZoneProps) {
+export function DropZone({
+  onFileSelected,
+  onFilesSelected,
+  currentFile,
+  currentFiles,
+  multiple,
+  disabled,
+}: DropZoneProps) {
   const onDrop = useCallback(
     (accepted: File[]) => {
-      if (accepted[0]) onFileSelected(accepted[0]);
+      if (multiple && onFilesSelected) {
+        onFilesSelected(accepted);
+      } else if (accepted[0]) {
+        onFileSelected(accepted[0]);
+      }
     },
-    [onFileSelected],
+    [onFileSelected, onFilesSelected, multiple],
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: ACCEPTED,
-    maxFiles: 1,
+    maxFiles: multiple ? 20 : 1,
     maxSize: 10 * 1024 * 1024,
     disabled,
+    multiple,
   });
+
+  const files = multiple ? (currentFiles ?? []) : currentFile ? [currentFile] : [];
 
   return (
     <div
@@ -49,20 +66,33 @@ export function DropZone({ onFileSelected, currentFile, disabled }: DropZoneProp
     >
       <input {...getInputProps()} />
 
-      {currentFile ? (
+      {files.length > 0 ? (
         <div className="space-y-1">
-          <div className="text-3xl">{currentFile.type === "application/pdf" ? "📄" : "🖼️"}</div>
-          <p className="text-text text-sm font-medium">{currentFile.name}</p>
-          <p className="text-text-tertiary text-xs">{formatSize(currentFile.size)}</p>
-          <p className="text-text-secondary mt-2 text-xs">Tap to change file</p>
+          <div className="text-3xl">
+            {files.length > 1 ? "📎" : files[0]!.type === "application/pdf" ? "📄" : "🖼️"}
+          </div>
+          {files.length === 1 ? (
+            <>
+              <p className="text-text text-sm font-medium">{files[0]!.name}</p>
+              <p className="text-text-tertiary text-xs">{formatSize(files[0]!.size)}</p>
+            </>
+          ) : (
+            <>
+              <p className="text-text text-sm font-medium">{files.length} files selected</p>
+              <p className="text-text-tertiary text-xs">{files.map((f) => f.name).join(", ")}</p>
+            </>
+          )}
+          <p className="text-text-secondary mt-2 text-xs">Tap to change</p>
         </div>
       ) : (
         <div className="space-y-2">
           <div className="text-3xl">📎</div>
           <p className="text-text text-sm font-medium">
-            {isDragActive ? "Drop file here" : "Tap to select or drop file"}
+            {isDragActive
+              ? `Drop file${multiple ? "s" : ""} here`
+              : `Tap to select or drop file${multiple ? "s" : ""}`}
           </p>
-          <p className="text-text-tertiary text-xs">PDF, JPEG, PNG, or WebP — up to 10 MB</p>
+          <p className="text-text-tertiary text-xs">PDF, JPEG, PNG, or WebP — up to 10 MB each</p>
         </div>
       )}
     </div>

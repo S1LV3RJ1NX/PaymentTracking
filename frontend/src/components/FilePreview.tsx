@@ -1,7 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { api } from "../api/client";
 import type { PaymentEntry } from "../api/transactions";
-import { getExpensePayments, addExpensePayment, deleteExpensePayment } from "../api/transactions";
+import {
+  getExpensePayments,
+  addExpensePayment,
+  deleteExpensePayment,
+  addManualPayment,
+} from "../api/transactions";
 import { maybeCompressImage } from "../lib/compressImage";
 
 interface FilePreviewProps {
@@ -258,6 +263,11 @@ export function FilePreview({
           : "overpaid";
 
   const [paymentAmountInput, setPaymentAmountInput] = useState("");
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [manualRef, setManualRef] = useState("");
+  const [manualAmount, setManualAmount] = useState("");
+  const [manualDate, setManualDate] = useState(new Date().toISOString().slice(0, 10));
+  const [manualMethod, setManualMethod] = useState("upi");
 
   const handleAddPayment = async (file: File) => {
     if (!expenseRowNum) return;
@@ -266,6 +276,28 @@ export function FilePreview({
       const compressed = await maybeCompressImage(file);
       await addExpensePayment(expenseRowNum, compressed, paymentAmountInput || undefined);
       setPaymentAmountInput("");
+      await fetchPayments();
+      onPaymentsChanged?.();
+    } catch {
+      // silent
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleAddManualPayment = async () => {
+    if (!expenseRowNum || !manualRef.trim() || !manualAmount.trim()) return;
+    setAdding(true);
+    try {
+      await addManualPayment(expenseRowNum, {
+        amount: manualAmount,
+        date: manualDate,
+        payment_method: manualMethod,
+        reference: manualRef,
+      });
+      setManualRef("");
+      setManualAmount("");
+      setShowManualForm(false);
       await fetchPayments();
       onPaymentsChanged?.();
     } catch {
@@ -423,28 +455,91 @@ export function FilePreview({
             ) : payments.length === 0 ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8">
                 <span className="text-text-tertiary text-sm">No payment proofs yet</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={paymentAmountInput}
-                  onChange={(e) => setPaymentAmountInput(e.target.value)}
-                  placeholder="Amount (blank = OCR)"
-                  className="border-thin border-border bg-surface-card text-text placeholder:text-text-tertiary focus:ring-accent-blue/30 w-48 rounded-lg px-3 py-1.5 text-center text-sm focus:outline-none focus:ring-2"
-                />
-                <label className="bg-accent-blue hover:bg-accent-blue/90 cursor-pointer rounded-lg px-4 py-2 text-xs font-medium text-white transition-colors">
-                  {adding ? "Uploading..." : "Add Payment Proof"}
-                  <input
-                    type="file"
-                    accept="image/*,application/pdf"
-                    className="hidden"
-                    disabled={adding}
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (f) void handleAddPayment(f);
-                    }}
-                  />
-                </label>
+                {showManualForm ? (
+                  <div className="w-full max-w-xs space-y-2">
+                    <input
+                      type="text"
+                      value={manualRef}
+                      onChange={(e) => setManualRef(e.target.value)}
+                      placeholder="Reference number *"
+                      className="border-thin border-border bg-surface-card text-text placeholder:text-text-tertiary focus:ring-accent-blue/30 w-full rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2"
+                    />
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={manualAmount}
+                      onChange={(e) => setManualAmount(e.target.value)}
+                      placeholder="Amount (INR) *"
+                      className="border-thin border-border bg-surface-card text-text placeholder:text-text-tertiary focus:ring-accent-blue/30 w-full rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2"
+                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="date"
+                        value={manualDate}
+                        onChange={(e) => setManualDate(e.target.value)}
+                        className="border-thin border-border bg-surface-card text-text focus:ring-accent-blue/30 flex-1 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2"
+                      />
+                      <select
+                        value={manualMethod}
+                        onChange={(e) => setManualMethod(e.target.value)}
+                        className="border-thin border-border bg-surface-card text-text focus:ring-accent-blue/30 w-20 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2"
+                      >
+                        <option value="upi">UPI</option>
+                        <option value="bank">Bank</option>
+                        <option value="card">Card</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <button
+                      onClick={() => void handleAddManualPayment()}
+                      disabled={adding || !manualRef.trim() || !manualAmount.trim()}
+                      className="bg-accent-blue w-full rounded-lg px-4 py-2 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                    >
+                      {adding ? "Saving…" : "Save Reference"}
+                    </button>
+                    <button
+                      onClick={() => setShowManualForm(false)}
+                      className="text-accent-blue w-full text-center text-[11px] hover:underline"
+                    >
+                      Upload a file instead
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={paymentAmountInput}
+                      onChange={(e) => setPaymentAmountInput(e.target.value)}
+                      placeholder="Amount (blank = OCR)"
+                      className="border-thin border-border bg-surface-card text-text placeholder:text-text-tertiary focus:ring-accent-blue/30 w-48 rounded-lg px-3 py-1.5 text-center text-sm focus:outline-none focus:ring-2"
+                    />
+                    <label className="bg-accent-blue hover:bg-accent-blue/90 cursor-pointer rounded-lg px-4 py-2 text-xs font-medium text-white transition-colors">
+                      {adding ? "Uploading..." : "Add Payment Proof"}
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf"
+                        className="hidden"
+                        disabled={adding}
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) void handleAddPayment(f);
+                        }}
+                      />
+                    </label>
+                    <button
+                      onClick={() => {
+                        setShowManualForm(true);
+                        if (invoiceAmount) setManualAmount(String(invoiceAmount));
+                      }}
+                      className="text-accent-blue text-[11px] hover:underline"
+                    >
+                      No file? Enter reference manually
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               <>
@@ -513,10 +608,33 @@ export function FilePreview({
                         Remove
                       </button>
                     </div>
-                    <FilePane
-                      key={payments[selectedPaymentIdx]!.file_key}
-                      fileKey={payments[selectedPaymentIdx]!.file_key}
-                    />
+                    {payments[selectedPaymentIdx]!.file_key ? (
+                      <FilePane
+                        key={payments[selectedPaymentIdx]!.file_key}
+                        fileKey={payments[selectedPaymentIdx]!.file_key}
+                      />
+                    ) : (
+                      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8">
+                        <span className="bg-accent-blue/10 text-accent-blue rounded-full px-3 py-1 text-xs font-medium">
+                          Manual Reference
+                        </span>
+                        <span className="text-text font-mono text-lg">
+                          {payments[selectedPaymentIdx]!.upi_txn_id || "—"}
+                        </span>
+                        <span className="text-text-secondary text-sm">
+                          {formatINR(
+                            parseFloat(
+                              payments[selectedPaymentIdx]!.amount_inr?.replace(/,/g, "") ?? "0",
+                            ),
+                          )}
+                          {payments[selectedPaymentIdx]!.payment_method &&
+                            ` · ${payments[selectedPaymentIdx]!.payment_method.toUpperCase()}`}
+                        </span>
+                        <span className="text-text-tertiary text-xs">
+                          {payments[selectedPaymentIdx]!.date}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </>
