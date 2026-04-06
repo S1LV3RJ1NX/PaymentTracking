@@ -287,7 +287,9 @@ export function FilePreview({
     }
   };
 
-  const hasFira = !!firaFileKey;
+  const firaKeys = firaFileKey ? firaFileKey.split(",").filter(Boolean) : [];
+  const hasFira = firaKeys.length > 0;
+  const [selectedFiraIdx, setSelectedFiraIdx] = useState(0);
 
   return (
     <div
@@ -365,6 +367,11 @@ export function FilePreview({
                 }`}
               >
                 FIRA
+                {firaKeys.length > 1 && (
+                  <span className="bg-accent-blue/20 text-accent-blue ml-1.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-semibold">
+                    {firaKeys.length}
+                  </span>
+                )}
               </button>
             )}
           </div>
@@ -373,8 +380,29 @@ export function FilePreview({
         {/* Content */}
         {activeTab === "document" && <FilePane key={fileKey} fileKey={fileKey} />}
 
-        {activeTab === "fira" && firaFileKey && (
-          <FilePane key={firaFileKey} fileKey={firaFileKey} />
+        {activeTab === "fira" && hasFira && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            {firaKeys.length > 1 && (
+              <div className="flex flex-wrap items-center gap-1.5 px-4 py-2">
+                {firaKeys.map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setSelectedFiraIdx(idx)}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                      selectedFiraIdx === idx
+                        ? "bg-accent-blue text-white"
+                        : "bg-surface-muted text-text-secondary hover:text-text"
+                    }`}
+                  >
+                    FIRA #{idx + 1}
+                  </button>
+                ))}
+              </div>
+            )}
+            {firaKeys[selectedFiraIdx] && (
+              <FilePane key={firaKeys[selectedFiraIdx]} fileKey={firaKeys[selectedFiraIdx]!} />
+            )}
+          </div>
         )}
 
         {activeTab === "payments" && isExpenseWithPayments && (

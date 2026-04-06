@@ -57,7 +57,7 @@ Extract ALL fields. Return ONLY valid JSON, no markdown, no explanation.
   "amount_inr": number — total amount in INR,
   "date": "YYYY-MM-DD",
   "upi_transaction_id": "string or null — UPI txn ID if visible",
-  "category": "rent" | "internet" | "electricity" | "travel" | "equipment" | "currency_fees" | "professional_fees" | "gym" | "healthcare" | "insurance" | "hotels" | "food" | "software" | "telephone" | "office_supplies" | "transport" | "education" | "other",
+  "category": "rent" | "internet" | "electricity" | "travel" | "equipment" | "currency_fees" | "professional_fees" | "gym" | "healthcare" | "insurance" | "hotels" | "food" | "software" | "telephone" | "office_supplies" | "transport" | "education" | "investment" | "other",
   "payment_method": "upi" | "card" | "bank" | "other" | null,
   "description": "string — short description, max 10 words",
   "business_pct": 100,

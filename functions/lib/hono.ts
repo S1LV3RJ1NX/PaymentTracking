@@ -469,9 +469,12 @@ app.post("/transactions/:id/fira", ownerOnly, async (c) => {
     const firaKey = `${fy}/FIRA/${Date.now()}_${file.name}`;
 
     await uploadRawToR2(firaKey, await file.arrayBuffer(), file.type, c.env);
-    await updateCell("Income", rowNum, "G", firaKey, c.env);
 
-    return c.json({ success: true, data: { id, firaFileKey: firaKey } });
+    const existing = (row[6] ?? "").trim();
+    const updated = existing ? `${existing},${firaKey}` : firaKey;
+    await updateCell("Income", rowNum, "G", updated, c.env);
+
+    return c.json({ success: true, data: { id, firaFileKey: firaKey, allFiraKeys: updated } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to attach FIRA";
     console.error("[transactions/fira]", msg);

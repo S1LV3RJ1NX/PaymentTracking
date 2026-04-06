@@ -16,6 +16,7 @@ export const EXPENSE_CATEGORIES = [
   "office_supplies",
   "transport",
   "education",
+  "investment",
   "other",
 ];
 
@@ -37,6 +38,7 @@ export const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   office_supplies: { bg: "bg-stone-100", text: "text-stone-800" },
   transport: { bg: "bg-fuchsia-100", text: "text-fuchsia-800" },
   education: { bg: "bg-blue-100", text: "text-blue-800" },
+  investment: { bg: "bg-green-100", text: "text-green-800" },
   other: { bg: "bg-gray-100", text: "text-gray-600" },
 };
 
@@ -58,6 +60,7 @@ export const CATEGORY_HEX_COLORS: Record<string, string> = {
   office_supplies: "#78716C",
   transport: "#D946EF",
   education: "#2563EB",
+  investment: "#16A34A",
   other: "#9CA3AF",
 };
 

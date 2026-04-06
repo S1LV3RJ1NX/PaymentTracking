@@ -623,7 +623,7 @@ export function Transactions() {
                             </Tooltip>
                           )}
 
-                          {tab === "Income" && isOwner && !row.values.fira_drive_url && (
+                          {tab === "Income" && isOwner && (
                             <Tooltip label="Attach FIRA">
                               <button
                                 aria-label="Attach FIRA"

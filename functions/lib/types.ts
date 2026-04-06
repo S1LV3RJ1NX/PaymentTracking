@@ -83,6 +83,7 @@ export const ExpenseResultSchema = z.object({
     "office_supplies",
     "transport",
     "education",
+    "investment",
     "other",
   ]),
   payment_method: z.enum(["upi", "card", "bank", "other"]).nullable(),

@@ -107,20 +107,21 @@ async function writeToSheets(
       ];
       const incomeRowNum = await appendRow("Income", incomeRow, env);
 
+      const skydoCharges = String(f["skydo_charges_inr"] ?? "");
       const feeRow = [
         String(f["date"] ?? ""),
         `Skydo fee – ${String(f["payer"] ?? "")}`,
         "currency_fees",
-        String(f["skydo_charges_inr"] ?? ""),
+        skydoCharges,
         "100",
-        String(f["skydo_charges_inr"] ?? ""),
+        skydoCharges,
         "bank",
         "Skydo",
         fileKey,
         "high",
         now,
-        "unpaid",
-        "0",
+        "paid",
+        skydoCharges,
       ];
       const feeRowNum = await appendRow("Expenses", feeRow, env);
 
