@@ -22,8 +22,11 @@ import { getStoredRole } from "../api/client";
 import { useFY } from "../context/FYContext";
 
 function formatINR(n: number): string {
+  if (n >= 10000000) {
+    return "₹" + (n / 10000000).toFixed(2) + " Crore";
+  }
   if (n >= 100000) {
-    return "₹" + (n / 100000).toFixed(1) + "L";
+    return "₹" + (n / 100000).toFixed(1) + " Lakhs";
   }
   return "₹" + n.toLocaleString("en-IN", { maximumFractionDigits: 0 });
 }
