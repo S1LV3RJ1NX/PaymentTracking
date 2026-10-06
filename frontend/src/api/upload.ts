@@ -64,3 +64,31 @@ export async function confirmUpload(
 export async function cancelUpload(fileKey: string): Promise<void> {
   await api.delete("/upload/cancel", { data: { fileKey } });
 }
+
+export interface ManualExpenseData {
+  date: string;
+  amount: number;
+  description: string;
+  reference: string;
+  category: string;
+  vendor: string;
+  payment_method: string;
+  businessPct: number;
+}
+
+export interface ManualExpenseResponse {
+  success: true;
+  data: {
+    rowNum: number;
+    paymentRowNum: number;
+    status: string;
+    totalPaid: number;
+  };
+}
+
+export async function createManualExpense(
+  data: ManualExpenseData,
+): Promise<ManualExpenseResponse["data"]> {
+  const res = await api.post<ManualExpenseResponse>("/upload/manual", data);
+  return res.data.data;
+}

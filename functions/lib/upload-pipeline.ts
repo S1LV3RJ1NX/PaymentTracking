@@ -1,7 +1,7 @@
 import type { UploadType, Env } from "./types";
 import { extractDocument } from "./ocr";
 import { uploadToR2 } from "./storage";
-import { appendRow, findRowByNetInr, updateFiraColumns } from "./sheets";
+import { appendRow, findRowByNetInr, updateFiraColumns, recalcPaymentStatus } from "./sheets";
 
 export interface ExtractInput {
   fileBuffer: ArrayBuffer;
@@ -78,6 +78,78 @@ export async function confirmAndWriteToSheets(
   );
 
   return { uploadType: input.uploadType, fileKey: input.fileKey, ...result };
+}
+
+export interface ManualExpenseInput {
+  date: string;
+  amount: number;
+  description: string;
+  reference: string;
+  category: string;
+  vendor: string;
+  paymentMethod: string;
+  businessPct: number;
+}
+
+export interface ManualExpenseOutput {
+  rowNum: number;
+  paymentRowNum: number;
+  status: string;
+  totalPaid: number;
+}
+
+/**
+ * Record an expense that was debited directly from the bank with no supporting
+ * document (invoice / screenshot). The user supplies the amount, description and
+ * a transaction reference number. Since the money has already left the account,
+ * the expense is also marked as paid by recording a matching payment row that
+ * carries the reference number (the Expenses sheet has no reference column, but
+ * the Payments sheet does).
+ */
+export async function writeManualExpense(
+  input: ManualExpenseInput,
+  env: Env,
+): Promise<ManualExpenseOutput> {
+  const now = new Date().toISOString();
+  const bpct = input.businessPct;
+  const claimable = input.amount * (bpct / 100);
+  const paymentMethod = input.paymentMethod || "bank";
+
+  const expenseRow = [
+    input.date,
+    input.description,
+    input.category || "other",
+    String(input.amount),
+    String(bpct),
+    String(claimable),
+    paymentMethod,
+    input.vendor,
+    "", // file_key — no document for a manual entry
+    "manual", // confidence
+    now,
+    "unpaid", // payment_status (recalculated below once the payment is recorded)
+    "0", // total_paid
+  ];
+  const rowNum = await appendRow("Expenses", expenseRow, env);
+
+  // A bank debit is money that has already left the account, so record it as a
+  // paid payment. This also gives the reference number a home and surfaces it in
+  // the transaction's payment history.
+  const paymentRow = [
+    String(rowNum),
+    input.date,
+    String(input.amount),
+    paymentMethod,
+    input.reference,
+    "", // file_key — no proof document
+    "manual",
+    now,
+  ];
+  const paymentRowNum = await appendRow("Payments", paymentRow, env);
+
+  const { status, totalPaid } = await recalcPaymentStatus(rowNum, env);
+
+  return { rowNum, paymentRowNum, status, totalPaid };
 }
 
 async function writeToSheets(

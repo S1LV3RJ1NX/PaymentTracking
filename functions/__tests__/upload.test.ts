@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from "vitest";
 import { app } from "../lib/hono";
-import { runExtractPipeline, confirmAndWriteToSheets } from "../lib/upload-pipeline";
+import {
+  runExtractPipeline,
+  confirmAndWriteToSheets,
+  writeManualExpense,
+} from "../lib/upload-pipeline";
 import { hash } from "bcryptjs";
 import type { Env } from "../lib/types";
 
@@ -36,6 +40,7 @@ vi.mock("../lib/sheets", () => ({
   findRowByNetInr: vi.fn().mockResolvedValue(null),
   updateFiraColumns: vi.fn().mockResolvedValue(undefined),
   updateCell: vi.fn().mockResolvedValue(undefined),
+  recalcPaymentStatus: vi.fn().mockResolvedValue({ status: "paid", totalPaid: 2000 }),
 }));
 
 const mockEnv: Env = {
@@ -384,5 +389,147 @@ describe("confirmAndWriteToSheets", () => {
     const expenseCall = vi.mocked(appendRow).mock.calls[0]!;
     expect(expenseCall[1]![4]).toBe("0");
     expect(expenseCall[1]![5]).toBe("0");
+  });
+});
+
+describe("writeManualExpense", () => {
+  it("writes an expense with no file plus a payment row carrying the reference", async () => {
+    const { appendRow, recalcPaymentStatus } = await import("../lib/sheets");
+    vi.mocked(appendRow).mockResolvedValueOnce(8).mockResolvedValueOnce(3);
+    vi.mocked(recalcPaymentStatus).mockResolvedValueOnce({ status: "paid", totalPaid: 2000 });
+
+    const result = await writeManualExpense(
+      {
+        date: "2026-04-10",
+        amount: 2000,
+        description: "AWS auto-debit",
+        reference: "UTR123456789",
+        category: "software",
+        vendor: "Amazon",
+        paymentMethod: "bank",
+        businessPct: 100,
+      },
+      mockEnv,
+    );
+
+    expect(result.rowNum).toBe(8);
+    expect(result.paymentRowNum).toBe(3);
+    expect(result.status).toBe("paid");
+
+    expect(appendRow).toHaveBeenCalledTimes(2);
+
+    const expenseCall = vi.mocked(appendRow).mock.calls[0]!;
+    expect(expenseCall[0]).toBe("Expenses");
+    expect(expenseCall[1]![1]).toBe("AWS auto-debit");
+    expect(expenseCall[1]![3]).toBe("2000");
+    expect(expenseCall[1]![5]).toBe("2000"); // claimable at 100%
+    expect(expenseCall[1]![8]).toBe(""); // no file key
+    expect(expenseCall[1]![9]).toBe("manual"); // confidence
+
+    const paymentCall = vi.mocked(appendRow).mock.calls[1]!;
+    expect(paymentCall[0]).toBe("Payments");
+    expect(paymentCall[1]![0]).toBe("8"); // linked to expense row
+    expect(paymentCall[1]![2]).toBe("2000");
+    expect(paymentCall[1]![4]).toBe("UTR123456789"); // reference
+
+    expect(recalcPaymentStatus).toHaveBeenCalledWith(8, mockEnv);
+  });
+
+  it("applies the business percentage to the claimable amount", async () => {
+    const { appendRow } = await import("../lib/sheets");
+    vi.mocked(appendRow).mockResolvedValueOnce(9).mockResolvedValueOnce(4);
+
+    await writeManualExpense(
+      {
+        date: "2026-04-10",
+        amount: 1000,
+        description: "Personal UPI debit",
+        reference: "REF99",
+        category: "other",
+        vendor: "",
+        paymentMethod: "upi",
+        businessPct: 0,
+      },
+      mockEnv,
+    );
+
+    const expenseCall = vi.mocked(appendRow).mock.calls[0]!;
+    expect(expenseCall[1]![4]).toBe("0");
+    expect(expenseCall[1]![5]).toBe("0");
+  });
+});
+
+describe("POST /upload/manual route", () => {
+  it("returns 403 for CA users", async () => {
+    const loginRes = await app.request(
+      "/api/auth/login",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: "kothari_ca", password: "ca-pass" }),
+      },
+      mockEnv,
+    );
+    const caToken = ((await loginRes.json()) as JsonBody).data!.token!;
+
+    const res = await app.request(
+      "/api/upload/manual",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${caToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: 2000, description: "test" }),
+      },
+      mockEnv,
+    );
+
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 400 when amount or description is missing", async () => {
+    const token = await getOwnerToken();
+
+    const res = await app.request(
+      "/api/upload/manual",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ reference: "UTR1" }),
+      },
+      mockEnv,
+    );
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as JsonBody).code).toBe("VALIDATION_ERROR");
+  });
+
+  it("records a manual expense for the owner", async () => {
+    const { appendRow, recalcPaymentStatus } = await import("../lib/sheets");
+    vi.mocked(appendRow).mockResolvedValueOnce(12).mockResolvedValueOnce(6);
+    vi.mocked(recalcPaymentStatus).mockResolvedValueOnce({ status: "paid", totalPaid: 500 });
+
+    const token = await getOwnerToken();
+
+    const res = await app.request(
+      "/api/upload/manual",
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: "2026-05-01",
+          amount: 500,
+          description: "Bank charges",
+          reference: "UTR-ABC",
+          category: "other",
+          businessPct: 100,
+        }),
+      },
+      mockEnv,
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as JsonBody;
+    expect(body.success).toBe(true);
+    expect(appendRow).toHaveBeenCalledTimes(2);
+    expect(recalcPaymentStatus).toHaveBeenCalledWith(12, mockEnv);
   });
 });

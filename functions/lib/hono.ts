@@ -6,7 +6,7 @@ import { zipSync } from "fflate";
 import type { Env, Role, UploadType } from "./types";
 import { LoginRequestSchema } from "./types";
 import { verifyJwt, verifyPassword, signJwt } from "./auth";
-import { runExtractPipeline, confirmAndWriteToSheets } from "./upload-pipeline";
+import { runExtractPipeline, confirmAndWriteToSheets, writeManualExpense } from "./upload-pipeline";
 import {
   getRows,
   getRow,
@@ -194,6 +194,54 @@ app.post("/upload/confirm", ownerOnly, async (c) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Failed to save transaction";
     console.error("[upload/confirm]", msg, err instanceof Error ? err.stack : "");
+    return c.json({ success: false, error: msg, code: "SHEET_ERROR" }, 500);
+  }
+});
+
+app.post("/upload/manual", ownerOnly, async (c) => {
+  const body = (await c.req.json()) as {
+    date?: string;
+    amount?: number | string;
+    description?: string;
+    reference?: string;
+    category?: string;
+    vendor?: string;
+    payment_method?: string;
+    businessPct?: number | null;
+  };
+
+  const amount = typeof body.amount === "string" ? parseFloat(body.amount) : body.amount;
+
+  if (amount == null || isNaN(amount) || amount <= 0 || !body.description) {
+    return c.json(
+      {
+        success: false,
+        error: "A positive amount and a description are required",
+        code: "VALIDATION_ERROR",
+      },
+      400,
+    );
+  }
+
+  try {
+    const result = await writeManualExpense(
+      {
+        date: body.date || new Date().toISOString().slice(0, 10),
+        amount,
+        description: body.description,
+        reference: body.reference ?? "",
+        category: body.category ?? "other",
+        vendor: body.vendor ?? "",
+        paymentMethod: body.payment_method ?? "bank",
+        businessPct: body.businessPct ?? 100,
+      },
+      c.env,
+    );
+
+    return c.json({ success: true, data: result });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to save manual entry";
+    console.error("[upload/manual]", msg, err instanceof Error ? err.stack : "");
     return c.json({ success: false, error: msg, code: "SHEET_ERROR" }, 500);
   }
 });

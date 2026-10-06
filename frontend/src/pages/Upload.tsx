@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import axios from "axios";
 import { DropZone } from "../components/DropZone";
 import { useUpload } from "../hooks/useUpload";
 import { useBatchUpload } from "../hooks/useBatchUpload";
 import type { BatchItem } from "../hooks/useBatchUpload";
 import { ComboInput } from "../components/ComboInput";
 import { EXPENSE_CATEGORIES } from "../lib/constants";
+import { createManualExpense } from "../api/upload";
 import type { UploadType } from "../api/types";
 
 const UPLOAD_TYPES: { value: UploadType; label: string; hint: string }[] = [
@@ -71,6 +73,79 @@ function SelectInput({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+interface ManualFields {
+  date: string;
+  amount: string;
+  description: string;
+  reference: string;
+  category: string;
+  vendor: string;
+  payment_method: string;
+}
+
+function ManualEntryForm({
+  values,
+  onChange,
+  disabled,
+}: {
+  values: ManualFields;
+  onChange: (key: keyof ManualFields, value: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="space-y-3">
+      <FieldInput
+        label="Date"
+        type="date"
+        value={values.date}
+        onChange={(v) => onChange("date", v)}
+        disabled={disabled}
+      />
+      <FieldInput
+        label="Amount (INR)"
+        type="number"
+        value={values.amount}
+        onChange={(v) => onChange("amount", v)}
+        disabled={disabled}
+      />
+      <FieldInput
+        label="Description"
+        value={values.description}
+        onChange={(v) => onChange("description", v)}
+        disabled={disabled}
+      />
+      <FieldInput
+        label="Reference number"
+        value={values.reference}
+        onChange={(v) => onChange("reference", v)}
+        disabled={disabled}
+      />
+      <ComboInput
+        label="Category"
+        id="manual-category"
+        value={values.category}
+        options={[...EXPENSE_CATEGORIES]}
+        onChange={(v) => onChange("category", v)}
+        disabled={disabled}
+        normalize
+      />
+      <FieldInput
+        label="Vendor (optional)"
+        value={values.vendor}
+        onChange={(v) => onChange("vendor", v)}
+        disabled={disabled}
+      />
+      <SelectInput
+        label="Payment method"
+        value={values.payment_method}
+        options={PAYMENT_METHODS}
+        onChange={(v) => onChange("payment_method", v)}
+        disabled={disabled}
+      />
     </div>
   );
 }
@@ -600,6 +675,59 @@ export function Upload() {
   const [batchMode, setBatchMode] = useState(false);
   const isBatchable = uploadType === "expense" || uploadType === "other";
 
+  const EMPTY_MANUAL: ManualFields = {
+    date: new Date().toISOString().slice(0, 10),
+    amount: "",
+    description: "",
+    reference: "",
+    category: "other",
+    vendor: "",
+    payment_method: "bank",
+  };
+  const [manualMode, setManualMode] = useState(false);
+  const [manual, setManual] = useState<ManualFields>(EMPTY_MANUAL);
+  const [manualStatus, setManualStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
+  const [manualError, setManualError] = useState<string | null>(null);
+  const canManual = uploadType === "expense";
+
+  const updateManual = (key: keyof ManualFields, value: string) =>
+    setManual((m) => ({ ...m, [key]: value }));
+
+  const resetManual = () => {
+    setManual(EMPTY_MANUAL);
+    setManualStatus("idle");
+    setManualError(null);
+  };
+
+  const submitManual = async () => {
+    if (!manual.amount || Number(manual.amount) <= 0 || !manual.description.trim()) {
+      setManualError("Enter a positive amount and a description.");
+      return;
+    }
+    setManualStatus("saving");
+    setManualError(null);
+    try {
+      await createManualExpense({
+        date: manual.date,
+        amount: Number(manual.amount),
+        description: manual.description.trim(),
+        reference: manual.reference.trim(),
+        category: manual.category,
+        vendor: manual.vendor.trim(),
+        payment_method: manual.payment_method,
+        businessPct,
+      });
+      setManualStatus("success");
+    } catch (err) {
+      let message = "Failed to save entry. Please try again.";
+      if (axios.isAxiosError(err)) {
+        message = err.response?.data?.error ?? message;
+      }
+      setManualStatus("error");
+      setManualError(message);
+    }
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("shared") === "1") {
@@ -621,6 +749,29 @@ export function Upload() {
       })();
     }
   }, [setFile]);
+
+  if (manualMode && manualStatus === "success") {
+    return (
+      <div className="bg-surface mx-auto min-h-screen max-w-lg px-4 pb-8 pt-6">
+        <h1 className="label-uppercase mb-6 text-center">Upload Document</h1>
+        <div className="border-accent-green bg-surface-card rounded-xl border-2 px-4 py-4 text-center">
+          <span className="bg-accent-green/10 text-accent-green mb-3 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium">
+            saved
+          </span>
+          <p className="text-text text-sm font-medium">Manual expense recorded</p>
+          <p className="text-text-tertiary mt-1 text-xs">
+            Saved without a document and marked paid.
+          </p>
+        </div>
+        <button
+          onClick={resetManual}
+          className="bg-text text-surface-card mt-4 w-full rounded-lg px-4 py-3 text-sm font-medium transition-opacity hover:opacity-90"
+        >
+          Add another
+        </button>
+      </div>
+    );
+  }
 
   if (batchMode && batch.batchStatus === "done") {
     return (
@@ -727,8 +878,10 @@ export function Upload() {
   }
 
   const isExtracting = batchMode ? batch.batchStatus === "extracting" : status === "extracting";
+  const isManualSaving = manualStatus === "saving";
+  const isBusy = isExtracting || isManualSaving;
   const showDescription =
-    !isReview && !batchMode && (uploadType === "expense" || uploadType === "other");
+    !isReview && !batchMode && !manualMode && (uploadType === "expense" || uploadType === "other");
   const showBusinessToggle = !isReview && (uploadType === "expense" || uploadType === "other");
 
   return (
@@ -746,13 +899,14 @@ export function Upload() {
                 onClick={() => {
                   setUploadType(t.value);
                   if (t.value !== "expense" && t.value !== "other") setBatchMode(false);
+                  if (t.value !== "expense") setManualMode(false);
                 }}
-                disabled={isExtracting}
+                disabled={isBusy}
                 className={`border-thin rounded-lg px-3 py-2.5 text-left transition-colors ${
                   uploadType === t.value
                     ? "border-accent-blue bg-accent-blue/5"
                     : "border-border bg-surface-card hover:border-accent-blue/40"
-                } ${isExtracting ? "opacity-60" : ""}`}
+                } ${isBusy ? "opacity-60" : ""}`}
               >
                 <span className="text-text block text-sm font-medium">{t.label}</span>
                 <span className="text-text-tertiary block text-[11px]">{t.hint}</span>
@@ -762,7 +916,7 @@ export function Upload() {
         </div>
 
         {/* Batch mode toggle */}
-        {isBatchable && !isExtracting && (
+        {isBatchable && !isExtracting && !manualMode && (
           <label className="flex cursor-pointer items-center gap-2">
             <input
               type="checkbox"
@@ -774,8 +928,28 @@ export function Upload() {
           </label>
         )}
 
-        {/* Main file drop zone */}
-        {batchMode ? (
+        {/* Manual entry toggle (no document) */}
+        {canManual && !isBusy && !batchMode && (
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="checkbox"
+              checked={manualMode}
+              onChange={(e) => {
+                setManualMode(e.target.checked);
+                setManualError(null);
+              }}
+              className="accent-accent-blue h-4 w-4 rounded"
+            />
+            <span className="text-text-secondary text-sm">
+              No document — enter reference &amp; amount manually
+            </span>
+          </label>
+        )}
+
+        {/* Main input: manual form or file drop zone */}
+        {manualMode ? (
+          <ManualEntryForm values={manual} onChange={updateManual} disabled={isManualSaving} />
+        ) : batchMode ? (
           <DropZone
             onFileSelected={() => {}}
             onFilesSelected={batch.setFiles}
@@ -798,7 +972,7 @@ export function Upload() {
                   setBusinessPct(100);
                   batch.setBusinessPct(100);
                 }}
-                disabled={isExtracting}
+                disabled={isBusy}
                 className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                   (batchMode ? batch.businessPct : businessPct) === 100
                     ? "border-accent-blue bg-accent-blue/5 text-accent-blue"
@@ -812,7 +986,7 @@ export function Upload() {
                   setBusinessPct(0);
                   batch.setBusinessPct(0);
                 }}
-                disabled={isExtracting}
+                disabled={isBusy}
                 className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
                   (batchMode ? batch.businessPct : businessPct) === 0
                     ? "border-accent-blue bg-accent-blue/5 text-accent-blue"
@@ -865,29 +1039,41 @@ export function Upload() {
         )}
 
         {/* Error */}
-        {!batchMode && error && (
+        {((manualMode && manualError) || (!batchMode && !manualMode && error)) && (
           <div className="bg-accent-red/10 rounded-lg px-3 py-2.5">
-            <p className="text-accent-red text-sm">{error}</p>
+            <p className="text-accent-red text-sm">{manualMode ? manualError : error}</p>
           </div>
         )}
 
         {/* Submit */}
         <button
           onClick={() => {
-            if (batchMode) {
+            if (manualMode) {
+              void submitManual();
+            } else if (batchMode) {
               void batch.submitAll(uploadType);
             } else {
               submit();
             }
           }}
-          disabled={batchMode ? batch.items.length === 0 || isExtracting : !file || isExtracting}
+          disabled={
+            manualMode
+              ? isManualSaving || !manual.amount || !manual.description.trim()
+              : batchMode
+                ? batch.items.length === 0 || isExtracting
+                : !file || isExtracting
+          }
           className="bg-text text-surface-card w-full rounded-lg px-4 py-3 text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-40"
         >
-          {isExtracting
-            ? "Processing…"
-            : batchMode
-              ? `Upload & Extract ${batch.items.length} file${batch.items.length !== 1 ? "s" : ""}`
-              : "Upload & Extract"}
+          {manualMode
+            ? isManualSaving
+              ? "Saving…"
+              : "Save Entry"
+            : isExtracting
+              ? "Processing…"
+              : batchMode
+                ? `Upload & Extract ${batch.items.length} file${batch.items.length !== 1 ? "s" : ""}`
+                : "Upload & Extract"}
         </button>
       </div>
     </div>
