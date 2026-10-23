@@ -137,9 +137,9 @@ Add both to `.dev.vars`.
 
 ### Income tab — Row 1 (headers):
 
-| A    | B      | C              | D          | E          | F         | G              | H        | I        | J          | K        |
-| ---- | ------ | -------------- | ---------- | ---------- | --------- | -------------- | -------- | -------- | ---------- | -------- |
-| date | client | invoice_number | usd_amount | inr_amount | skydo_prn | fira_drive_url | fira_ref | file_key | confidence | added_at |
+| A    | B      | C              | D              | E          | F         | G              | H        | I        | J          | K        | L        |
+| ---- | ------ | -------------- | -------------- | ---------- | --------- | -------------- | -------- | -------- | ---------- | -------- | -------- |
+| date | client | invoice_number | foreign_amount | inr_amount | skydo_prn | fira_drive_url | fira_ref | file_key | confidence | added_at | currency |
 
 ### Expenses tab — Row 1 (headers):
 

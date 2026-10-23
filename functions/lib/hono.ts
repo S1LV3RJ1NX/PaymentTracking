@@ -341,7 +341,7 @@ const INCOME_COLS = [
   "date",
   "client",
   "invoice_number",
-  "usd_amount",
+  "foreign_amount",
   "inr_amount",
   "skydo_prn",
   "fira_drive_url",
@@ -349,6 +349,7 @@ const INCOME_COLS = [
   "file_key",
   "confidence",
   "added_at",
+  "currency",
 ];
 
 const EXPENSE_COLS = [

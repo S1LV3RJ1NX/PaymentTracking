@@ -35,7 +35,8 @@ describe("buildFilename", () => {
       data: {
         payer: "Ensemble Labs Inc.",
         date: "2026-03-15",
-        usd_amount: 5000,
+        foreign_amount: 5000,
+        currency: "USD",
         fx_rate: 84.5,
         converted_inr: 422500,
         skydo_charges_inr: 3144.15,
@@ -110,7 +111,8 @@ describe("buildR2Key", () => {
       data: {
         payer: "Test Co",
         date: "2026-03-15",
-        usd_amount: 5000,
+        foreign_amount: 5000,
+        currency: "USD",
         fx_rate: 84.5,
         converted_inr: 422500,
         skydo_charges_inr: 3000,
@@ -155,7 +157,8 @@ describe("uploadToR2", () => {
       data: {
         payer: "Test Co",
         date: "2026-03-15",
-        usd_amount: 5000,
+        foreign_amount: 5000,
+        currency: "USD",
         fx_rate: 84.5,
         converted_inr: 422500,
         skydo_charges_inr: 3000,

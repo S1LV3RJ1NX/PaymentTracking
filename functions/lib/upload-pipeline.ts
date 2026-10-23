@@ -168,7 +168,7 @@ async function writeToSheets(
         String(f["date"] ?? ""),
         String(f["payer"] ?? ""),
         String(f["invoice_number"] ?? ""),
-        String(f["usd_amount"] ?? ""),
+        String(f["foreign_amount"] ?? ""),
         String(f["net_inr_received"] ?? ""),
         String(f["skydo_prn"] ?? ""),
         "",
@@ -176,6 +176,7 @@ async function writeToSheets(
         fileKey,
         confidence,
         now,
+        String(f["currency"] ?? "USD"),
       ];
       const incomeRowNum = await appendRow("Income", incomeRow, env);
 

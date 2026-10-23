@@ -289,7 +289,8 @@ describe("confirmAndWriteToSheets", () => {
           date: "2026-03-15",
           payer: "Ensemble Labs Inc.",
           invoice_number: "BL26N112779",
-          usd_amount: 5000,
+          foreign_amount: 5000,
+          currency: "USD",
           net_inr_received: 419355.85,
           skydo_prn: "PRN123",
           skydo_charges_inr: 3144.15,
@@ -307,6 +308,8 @@ describe("confirmAndWriteToSheets", () => {
     const incomeCall = vi.mocked(appendRow).mock.calls[0]!;
     expect(incomeCall[0]).toBe("Income");
     expect(incomeCall[1]).toContain("Ensemble Labs Inc.");
+    expect(incomeCall[1]![3]).toBe("5000");
+    expect(incomeCall[1]![11]).toBe("USD");
 
     const feeCall = vi.mocked(appendRow).mock.calls[1]!;
     expect(feeCall[0]).toBe("Expenses");

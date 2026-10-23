@@ -270,13 +270,25 @@ function SkydoReviewForm({
         onChange={(v) => onUpdateField("invoice_number", v)}
         disabled={disabled}
       />
-      <FieldInput
-        label="USD amount"
-        type="number"
-        value={String(fields["usd_amount"] ?? "")}
-        onChange={(v) => onUpdateField("usd_amount", v ? Number(v) : "")}
-        disabled={disabled}
-      />
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <FieldInput
+            label="Amount received"
+            type="number"
+            value={String(fields["foreign_amount"] ?? "")}
+            onChange={(v) => onUpdateField("foreign_amount", v ? Number(v) : "")}
+            disabled={disabled}
+          />
+        </div>
+        <div className="w-24">
+          <FieldInput
+            label="Currency"
+            value={String(fields["currency"] ?? "USD")}
+            onChange={(v) => onUpdateField("currency", v.toUpperCase())}
+            disabled={disabled}
+          />
+        </div>
+      </div>
       <FieldInput
         label="Net INR received"
         type="number"

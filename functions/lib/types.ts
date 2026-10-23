@@ -33,7 +33,8 @@ export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 export const SkyDoResultSchema = z.object({
   payer: z.string(),
   date: z.string(),
-  usd_amount: z.number(),
+  foreign_amount: z.number(),
+  currency: z.string().default("USD"),
   fx_rate: z.number(),
   converted_inr: z.number(),
   skydo_charges_inr: z.number(),

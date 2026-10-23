@@ -490,7 +490,7 @@ export function Transactions() {
           "date",
           "client",
           "invoice_number",
-          "usd_amount",
+          "foreign_amount",
           "inr_amount",
           "skydo_prn",
           "fira_drive_url",
@@ -498,6 +498,7 @@ export function Transactions() {
           "file_key",
           "confidence",
           "added_at",
+          "currency",
         ]
       : [
           "date",

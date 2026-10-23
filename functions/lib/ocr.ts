@@ -13,8 +13,9 @@ Extract ALL fields. Return ONLY valid JSON, no markdown, no explanation.
 {
   "payer": "string — the Payer company name exactly as shown",
   "date": "YYYY-MM-DD — the invoice/processed date",
-  "usd_amount": number — Amount received in USD,
-  "fx_rate": number — FX rate shown,
+  "foreign_amount": number — 'Amount received' in its original foreign currency (USD, GBP, EUR, etc.),
+  "currency": "string — 3-letter ISO code of the 'Amount received' currency, e.g. USD, GBP, EUR",
+  "fx_rate": number — FX rate shown for the received amount,
   "converted_inr": number — Converted amount in INR (before Skydo charges),
   "skydo_charges_inr": number — Total Skydo charges including GST,
   "net_inr_received": number — 'You received' amount in INR,
@@ -26,6 +27,8 @@ Extract ALL fields. Return ONLY valid JSON, no markdown, no explanation.
 
 Rules:
 - net_inr_received = converted_inr - skydo_charges_inr
+- The received amount may be in any currency; do NOT convert it to USD. Report it as shown with its currency code
+- Ignore the USD figure in the Skydo fee line item — it is the fee, not the amount received
 - If any key field is missing, set confidence to "low"
 - Dates in DD/MM/YYYY format should be converted to YYYY-MM-DD`;
 

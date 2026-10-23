@@ -12,7 +12,8 @@ vi.mock("@anthropic-ai/sdk", () => ({
 const sampleSkydo = {
   payer: "Ensemble Labs Inc.",
   date: "2026-03-15",
-  usd_amount: 5000,
+  foreign_amount: 5000,
+  currency: "USD",
   fx_rate: 84.5,
   converted_inr: 422500,
   skydo_charges_inr: 3144.15,
@@ -76,6 +77,34 @@ describe("extractDocument", () => {
       payer: "Ensemble Labs Inc.",
       net_inr_received: 419355.85,
       skydo_charges_inr: 3144.15,
+    });
+  });
+
+  it("parses a Skydo invoice received in GBP", async () => {
+    mockCreate.mockResolvedValueOnce(
+      makeClaudeResponse({
+        ...sampleSkydo,
+        payer: "Vink S.A.S.",
+        foreign_amount: 2194.59,
+        currency: "GBP",
+        fx_rate: 126.9717,
+        converted_inr: 278650.82,
+        skydo_charges_inr: 3244.24,
+        net_inr_received: 275406.58,
+      }),
+    );
+
+    const result = await extractDocument(
+      dummyBuffer,
+      "application/pdf",
+      "skydo_invoice",
+      "sk-ant-test",
+    );
+
+    expect(result.data).toMatchObject({
+      foreign_amount: 2194.59,
+      currency: "GBP",
+      net_inr_received: 275406.58,
     });
   });
 
